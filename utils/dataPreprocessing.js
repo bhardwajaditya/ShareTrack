@@ -5,21 +5,22 @@ export const processData = (stockData) => {
         low: [],
         close: []
     }
+    console.log(stockData);
     for(var key in stockData) {
         if (stockData.hasOwnProperty(key)) {
             const val = stockData[key];
-            result.open.push(parseFloat(val['1. open']));
-            result.high.push(parseFloat(val['2. high']));
-            result.low.push(parseFloat(val['3. low']));
-            result.close.push(parseFloat(val['4. close']));
+            result.open.push(parseFloat(val['open']));
+            result.high.push(parseFloat(val['high']));
+            result.low.push(parseFloat(val['low']));
+            result.close.push(parseFloat(val['close']));
         }
     }
     return result;
 }
 
 export const checkRisingGraph = (smaData) => {
-    for (let i = 1; i< 10; i++) {
-        if (smaData[i] > smaData[i-1]) {
+    for (let i = 1; i < 10; i++) {
+        if (smaData[i] < smaData[i-1]) {
             return false;
         }
     }

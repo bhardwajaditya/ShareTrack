@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import slugs from '../../utils/constants';
 import { INDEX_STOCKS_URL, STOCK_DATA } from '../../public/constant';
 import { processData, checkRisingGraph } from '../../utils/dataPreprocessing';
+import { niftyData } from '../../public/nifty';
 
 export default function nseShare() {
     const router = useRouter();
@@ -21,13 +22,14 @@ export default function nseShare() {
         if (id === undefined) {
             return;
         }
-        fetch(indexStockURL)
-            .then(data => data.json())
-            .then(indexStocks => setStocks(indexStocks.data))
-            .catch(error => {
-                console.error(error);
-                router.push('/nse');
-            });
+        // fetch(indexStockURL)
+        //     .then(data => data.json())
+        //     .then(indexStocks => setStocks(indexStocks.data))
+        //     .catch(error => {
+        //         console.error(error);
+        //         router.push('/nse');
+        //     });
+        setStocks(niftyData);
     }, id);
 
     const searchBullishStocks = () => {
