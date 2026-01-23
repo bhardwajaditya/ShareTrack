@@ -149,7 +149,7 @@ import { sma, ema, rsi, atr, macd, bollingerbands, stochastic } from 'technicali
 // Volume Validation: 25%
 // ============================================================
 
-const analyzeWeightedStrategy = (data) => {
+export const analyzeWeightedStrategy = (data, index = null) => {
   // Default insufficient data response
   const insufficientResult = {
     phase1: { passed: false, score: 0, reason: 'Insufficient data', priceAboveEma: false, volumeAboveAvg: false },
@@ -162,12 +162,14 @@ const analyzeWeightedStrategy = (data) => {
     isBullish: false
   };
 
-  if (data.length < 50) return insufficientResult;
+  // Support backtest mode: if index provided, slice data to that point
+  const workingData = index !== null ? data.slice(0, index + 1) : data;
+  if (workingData.length < 50) return insufficientResult;
 
-  const closes = data.map(d => d.close);
-  const highs = data.map(d => d.high);
-  const lows = data.map(d => d.low);
-  const volumes = data.map(d => d.volume);
+  const closes = workingData.map(d => d.close);
+  const highs = workingData.map(d => d.high);
+  const lows = workingData.map(d => d.low);
+  const volumes = workingData.map(d => d.volume);
   const lastClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
 
@@ -419,7 +421,7 @@ const analyzeWeightedStrategy = (data) => {
 // STRATEGY 2: CONNORS RSI-2 (Larry Connors - Mean Reversion)
 // Buy deep oversold dips in uptrending stocks
 // ============================================================
-const analyzeConnorsRSI = (data) => {
+export const analyzeConnorsRSI = (data, index = null) => {
   const insufficientResult = {
     signal: 'NEUTRAL',
     score: 0,
@@ -429,9 +431,11 @@ const analyzeConnorsRSI = (data) => {
     aboveSma5: false
   };
 
-  if (data.length < 200) return insufficientResult;
+  // Support backtest mode: if index provided, slice data to that point
+  const workingData = index !== null ? data.slice(0, index + 1) : data;
+  if (workingData.length < 200) return insufficientResult;
 
-  const closes = data.map(d => d.close);
+  const closes = workingData.map(d => d.close);
   const lastClose = closes[closes.length - 1];
 
   // 200 SMA - Long-term trend filter
@@ -506,7 +510,7 @@ const analyzeConnorsRSI = (data) => {
 // STRATEGY 3: TURTLE SOUP / DONCHIAN BREAKOUT (Richard Dennis)
 // Buy breakout above 20-day high, exit at 10-day low
 // ============================================================
-const analyzeTurtleSoup = (data) => {
+export const analyzeTurtleSoup = (data, index = null) => {
   const insufficientResult = {
     signal: 'NEUTRAL',
     score: 0,
@@ -516,11 +520,13 @@ const analyzeTurtleSoup = (data) => {
     above10Low: true
   };
 
-  if (data.length < 50) return insufficientResult;
+  // Support backtest mode: if index provided, slice data to that point
+  const workingData = index !== null ? data.slice(0, index + 1) : data;
+  if (workingData.length < 50) return insufficientResult;
 
-  const closes = data.map(d => d.close);
-  const highs = data.map(d => d.high);
-  const lows = data.map(d => d.low);
+  const closes = workingData.map(d => d.close);
+  const highs = workingData.map(d => d.high);
+  const lows = workingData.map(d => d.low);
   const lastClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
 
@@ -607,7 +613,7 @@ const analyzeTurtleSoup = (data) => {
 // For daily data: Uses first few days of month/week as "range"
 // Adapted for EOD: Use recent consolidation range
 // ============================================================
-const analyzeOpeningRange = (data) => {
+export const analyzeOpeningRange = (data, index = null) => {
   const insufficientResult = {
     signal: 'NEUTRAL',
     score: 0,
@@ -617,23 +623,25 @@ const analyzeOpeningRange = (data) => {
     volumeConfirm: false
   };
 
-  if (data.length < 20) return insufficientResult;
+  // Support backtest mode: if index provided, slice data to that point
+  const workingData = index !== null ? data.slice(0, index + 1) : data;
+  if (workingData.length < 20) return insufficientResult;
 
-  const closes = data.map(d => d.close);
-  const highs = data.map(d => d.high);
-  const lows = data.map(d => d.low);
-  const volumes = data.map(d => d.volume);
+  const closes = workingData.map(d => d.close);
+  const highs = workingData.map(d => d.high);
+  const lows = workingData.map(d => d.low);
+  const volumes = workingData.map(d => d.volume);
   const lastClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
 
   // Define "Opening Range" using last 5 days consolidation
-  const rangeData = data.slice(-6, -1); // Last 5 days excluding today
+  const rangeData = workingData.slice(-6, -1); // Last 5 days excluding today
   const rangeHigh = Math.max(...rangeData.map(d => d.high));
   const rangeLow = Math.min(...rangeData.map(d => d.low));
   const rangeWidth = rangeHigh - rangeLow;
 
   // Calculate VWAP approximation (typical price * volume weighted)
-  const recentData = data.slice(-10);
+  const recentData = workingData.slice(-10);
   let vwapNumerator = 0;
   let vwapDenominator = 0;
   recentData.forEach(d => {

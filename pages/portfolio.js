@@ -356,6 +356,7 @@ export default function Portfolio() {
                 paginationPageSize={15}
                 animateRows={true}
                 domLayout="normal"
+                onGridReady={(params) => params.api.autoSizeAllColumns()}
               />
             </div>
           </div>

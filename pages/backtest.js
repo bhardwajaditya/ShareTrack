@@ -425,6 +425,7 @@ export default function BacktestPage() {
                   rowData={results.strategies}
                   columnDefs={strategyColumnDefs}
                   domLayout="normal"
+                  onGridReady={(params) => params.api.autoSizeAllColumns()}
                 />
               </div>
             </div>
@@ -440,6 +441,7 @@ export default function BacktestPage() {
                   columnDefs={stockColumnDefs}
                   pagination={true}
                   paginationPageSize={15}
+                  onGridReady={(params) => params.api.autoSizeAllColumns()}
                 />
               </div>
             </div>

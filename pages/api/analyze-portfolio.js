@@ -1,19 +1,15 @@
 import { getPortfolioCollection, getReportsCollection } from '../../utils/mongodb';
 import { 
-  analyzePVB, 
-  analyzeVSA, 
-  analyzeDonchian, 
-  analyzeRSISupertrend,
-  analyzeMACrossover,
-  analyzeMACDCrossover,
-  analyzeBollingerBands,
-  analyzeStochastic
+  analyzeWeightedStrategy,
+  analyzeConnorsRSI,
+  analyzeTurtleSoup,
+  analyzeOpeningRange
 } from '../../utils/stockData';
 
 const YAHOO_FINANCE_BASE_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 
-// Fetch historical data for a symbol
-async function fetchHistoricalData(symbol, period = '1mo') {
+// Fetch historical data for a symbol (1 year for proper analysis)
+async function fetchHistoricalData(symbol, period = '1y') {
   const yahooSymbol = `${symbol}.NS`;
   const url = `${YAHOO_FINANCE_BASE_URL}${yahooSymbol}?interval=1d&range=${period}`;
   
@@ -45,40 +41,73 @@ async function fetchHistoricalData(symbol, period = '1mo') {
   }
 }
 
-// Analyze a single stock with all strategies
+// Analyze a single stock with all 4 strategies (synced with analysis.js)
 function analyzeStock(data) {
-  if (!data || data.length < 30) {
+  if (!data || data.length < 50) {
     return null;
   }
 
-  const pvb = analyzePVB(data);
-  const vsa = analyzeVSA(data);
-  const donchian = analyzeDonchian(data);
-  const rsiSupertrend = analyzeRSISupertrend(data);
-  const maCrossover = analyzeMACrossover(data);
-  const macdCrossover = analyzeMACDCrossover(data);
-  const bollingerBands = analyzeBollingerBands(data);
-  const stochastic = analyzeStochastic(data);
+  // Run all 4 strategies (same as pages/analysis.js)
+  const trendPullback = analyzeWeightedStrategy(data);
+  const connorsRSI = analyzeConnorsRSI(data);
+  const turtleSoup = analyzeTurtleSoup(data);
+  const openingRange = analyzeOpeningRange(data);
 
-  // Count signals
+  // Count signals from all 4 strategies
   const signals = [
-    pvb?.signal, vsa?.signal, donchian?.signal, rsiSupertrend?.signal,
-    maCrossover?.signal, macdCrossover?.signal, bollingerBands?.signal, stochastic?.signal
+    trendPullback?.signal,
+    connorsRSI?.signal,
+    turtleSoup?.signal,
+    openingRange?.signal
   ];
 
   const buyCount = signals.filter(s => s === 'BUY' || s === 'STRONG BUY').length;
   const sellCount = signals.filter(s => s === 'SELL' || s === 'STRONG SELL').length;
 
+  // Calculate overall score (average of all 4 strategies)
+  const overallScore = Math.round(
+    ((trendPullback?.totalScore || 0) + 
+     (connorsRSI?.score || 0) + 
+     (turtleSoup?.score || 0) + 
+     (openingRange?.score || 0)) / 4
+  );
+
+  // Determine overall signal based on consensus
   let overallSignal = 'HOLD';
-  if (buyCount >= 5) overallSignal = 'STRONG BUY';
-  else if (buyCount >= 3) overallSignal = 'BUY';
-  else if (sellCount >= 5) overallSignal = 'STRONG SELL';
-  else if (sellCount >= 3) overallSignal = 'SELL';
+  if (buyCount >= 3) overallSignal = 'STRONG BUY';
+  else if (buyCount >= 2) overallSignal = 'BUY';
+  else if (sellCount >= 3) overallSignal = 'STRONG SELL';
+  else if (sellCount >= 2) overallSignal = 'SELL';
 
   return {
-    pvb, vsa, donchian, rsiSupertrend,
-    maCrossover, macdCrossover, bollingerBands, stochastic,
-    buyCount, sellCount, overallSignal
+    trendPullback: {
+      signal: trendPullback?.signal || 'NEUTRAL',
+      score: trendPullback?.totalScore || 0,
+      confidence: trendPullback?.confidence || 'LOW',
+      reason: trendPullback?.phase1?.reason || 'No data'
+    },
+    connorsRSI: {
+      signal: connorsRSI?.signal || 'NEUTRAL',
+      score: connorsRSI?.score || 0,
+      rsi2: connorsRSI?.rsi2 || null,
+      reason: connorsRSI?.reason || 'No data'
+    },
+    turtleSoup: {
+      signal: turtleSoup?.signal || 'NEUTRAL',
+      score: turtleSoup?.score || 0,
+      breakout: turtleSoup?.breakout || false,
+      reason: turtleSoup?.reason || 'No data'
+    },
+    openingRange: {
+      signal: openingRange?.signal || 'NEUTRAL',
+      score: openingRange?.score || 0,
+      breakout: openingRange?.breakout || false,
+      reason: openingRange?.reason || 'No data'
+    },
+    buyCount,
+    sellCount,
+    overallScore,
+    overallSignal
   };
 }
 

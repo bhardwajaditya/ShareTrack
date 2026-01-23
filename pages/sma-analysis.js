@@ -180,6 +180,7 @@ export default function SMAAnalysis() {
             paginationPageSize={20}
             animateRows={true}
             enableCellTextSelection={true}
+            onGridReady={(params) => params.api.autoSizeAllColumns()}
           />
         </div>
       </div>

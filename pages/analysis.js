@@ -185,6 +185,7 @@ export default function Analysis() {
             pagination={true}
             paginationPageSize={10}
             animateRows={true}
+            onGridReady={(params) => params.api.autoSizeAllColumns()}
           />
         </div>
       </div>
@@ -223,6 +224,7 @@ export default function Analysis() {
                 pagination={true}
                 paginationPageSize={20}
                 animateRows={true}
+                onGridReady={(params) => params.api.autoSizeAllColumns()}
               />
             </div>
           )}
