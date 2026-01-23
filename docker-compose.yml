@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: sharetrack-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=sharetrack
+    networks:
+      - sharetrack-network
+
+  # Next.js Web Application
+  web:
+    build: .
+    container_name: sharetrack-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/sharetrack
+      - MONGODB_DB=sharetrack
+    networks:
+      - sharetrack-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  sharetrack-network:
+    driver: bridge

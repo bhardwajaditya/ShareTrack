@@ -46,17 +46,17 @@ export default function Home() {
     }
   }, []);
 
-  // Signal cell style helper
+  // Signal cell style helper (dark theme compatible)
   const signalCellStyle = (params) => {
     const value = params.value;
-    if (value === 'BUY') return { backgroundColor: '#dcfce7', color: '#166534', fontWeight: 'bold', textAlign: 'center' };
-    if (value === 'STRONG BUY') return { backgroundColor: '#22c55e', color: 'white', fontWeight: 'bold', textAlign: 'center' };
-    if (value === 'SELL') return { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center' };
-    if (value === 'STRONG SELL') return { backgroundColor: '#ef4444', color: 'white', fontWeight: 'bold', textAlign: 'center' };
-    return { backgroundColor: '#f3f4f6', color: '#6b7280', textAlign: 'center' };
+    if (value === 'BUY') return { backgroundColor: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontWeight: 'bold', textAlign: 'center' };
+    if (value === 'STRONG BUY') return { backgroundColor: 'rgba(34, 197, 94, 0.4)', color: '#22c55e', fontWeight: 'bold', textAlign: 'center' };
+    if (value === 'SELL') return { backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 'bold', textAlign: 'center' };
+    if (value === 'STRONG SELL') return { backgroundColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', fontWeight: 'bold', textAlign: 'center' };
+    return { backgroundColor: 'rgba(100, 116, 139, 0.2)', color: '#94a3b8', textAlign: 'center' };
   };
 
-  // Detail Grid: Stocks & Analysis - 8 Strategies
+  // Detail Grid: Stocks & 4 Strategy Analysis
   const stockColumnDefs = useMemo(() => [
     { 
       field: 'symbol', 
@@ -85,7 +85,7 @@ export default function Home() {
       },
       valueFormatter: params => params.value ? `${params.value > 0 ? '+' : ''}${params.value}%` : ''
     },
-    // Overall Signal
+    // Overall Signal (Consensus)
     { 
       field: 'overallSignal', 
       headerName: '📊 Overall', 
@@ -95,144 +95,139 @@ export default function Home() {
       cellStyle: signalCellStyle
     },
     { 
+      field: 'overallScore', 
+      headerName: 'Score', 
+      sortable: true, 
+      width: 65,
+      cellStyle: params => {
+        const score = params.value || 0;
+        if (score >= 60) return { color: '#22c55e', fontWeight: 'bold' };
+        if (score >= 40) return { color: '#fbbf24' };
+        return { color: '#f87171' };
+      }
+    },
+    { 
       field: 'buyCount', 
-      headerName: 'Buy#', 
+      headerName: 'Buys', 
       sortable: true, 
       width: 55,
-      cellStyle: params => params.value >= 3 ? { color: '#16a34a', fontWeight: 'bold' } : {}
+      cellStyle: params => params.value >= 3 ? { color: '#22c55e', fontWeight: 'bold' } : 
+                           params.value >= 2 ? { color: '#4ade80' } : { color: '#94a3b8' }
     },
-    // Strategy 1: PVB
+    // Strategy 1: Trend-Pullback
     { 
-      headerName: '1️⃣ PVB',
+      headerName: '1️⃣ Trend-Pullback',
       children: [
-        { field: 'pvb.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'pvb.reason', headerName: 'Reason', width: 140, tooltipField: 'pvb.reason' }
+        { field: 'trendPullback.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'trendPullback.score', headerName: 'Pts', width: 50 }
       ]
     },
-    // Strategy 2: VSA
+    // Strategy 2: Connors RSI-2
     { 
-      headerName: '2️⃣ VSA',
+      headerName: '2️⃣ Connors RSI',
       children: [
-        { field: 'vsa.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'vsa.reason', headerName: 'Reason', width: 140, tooltipField: 'vsa.reason' }
+        { field: 'connorsRSI.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'connorsRSI.score', headerName: 'Pts', width: 50 },
+        { field: 'connorsRSI.rsi2', headerName: 'RSI', width: 50 }
       ]
     },
-    // Strategy 3: Donchian
+    // Strategy 3: Turtle Soup
     { 
-      headerName: '3️⃣ Donchian',
+      headerName: '3️⃣ Turtle Soup',
       children: [
-        { field: 'donchian.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'donchian.reason', headerName: 'Reason', width: 140, tooltipField: 'donchian.reason' }
+        { field: 'turtleSoup.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'turtleSoup.score', headerName: 'Pts', width: 50 },
+        { 
+          field: 'turtleSoup.breakout', 
+          headerName: 'Brk', 
+          width: 45,
+          valueFormatter: p => p.value ? '🚀' : '-',
+          cellStyle: params => ({ textAlign: 'center' })
+        }
       ]
     },
-    // Strategy 4: RSI + Supertrend
+    // Strategy 4: Opening Range
     { 
-      headerName: '4️⃣ RSI+ST',
+      headerName: '4️⃣ Opening Range',
       children: [
-        { field: 'rsiSupertrend.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'rsiSupertrend.rsi', headerName: 'RSI', width: 55 }
-      ]
-    },
-    // Strategy 5: MA Crossover
-    { 
-      headerName: '5️⃣ MACross',
-      children: [
-        { field: 'maCrossover.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'maCrossover.reason', headerName: 'Reason', width: 140, tooltipField: 'maCrossover.reason' }
-      ]
-    },
-    // Strategy 6: MACD
-    { 
-      headerName: '6️⃣ MACD',
-      children: [
-        { field: 'macdCrossover.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'macdCrossover.histogram', headerName: 'Hist', width: 60 }
-      ]
-    },
-    // Strategy 7: Bollinger Bands
-    { 
-      headerName: '7️⃣ BB',
-      children: [
-        { field: 'bollingerBands.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'bollingerBands.percentB', headerName: '%B', width: 55 }
-      ]
-    },
-    // Strategy 8: Stochastic
-    { 
-      headerName: '8️⃣ Stoch',
-      children: [
-        { field: 'stochastic.signal', headerName: 'Sig', width: 70, cellStyle: signalCellStyle },
-        { field: 'stochastic.k', headerName: '%K', width: 50 }
+        { field: 'openingRange.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'openingRange.score', headerName: 'Pts', width: 50 },
+        { 
+          field: 'openingRange.breakout', 
+          headerName: 'Brk', 
+          width: 45,
+          valueFormatter: p => p.value ? '📈' : '-',
+          cellStyle: params => ({ textAlign: 'center' })
+        }
       ]
     }
   ], []);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">NSE Stock Tracker & Analysis</h1>
-          <p className="mt-2 text-gray-600">Select an index to view technical analysis and signals</p>
-        </div>
-
-        {/* Master Grid: Indexes */}
-        <div className="bg-white shadow sm:rounded-lg overflow-hidden mb-8">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h2 className="text-lg font-medium text-gray-900">Market Indexes</h2>
-          </div>
-          <div className="ag-theme-alpine" style={{ height: 300, width: '100%' }}>
-            <AgGridReact
-              rowData={indexRowData}
-              columnDefs={indexColumnDefs}
-              rowSelection="single"
-              onRowSelected={onIndexRowSelected}
-              pagination={true}
-              paginationPageSize={10}
-              animateRows={true}
-            />
-          </div>
-        </div>
-
-        {/* Detail View */}
-        {selectedIndex && (
-          <div className="bg-white shadow sm:rounded-lg overflow-hidden">
-            <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-medium text-gray-900">
-                  {selectedIndex.name} Analysis
-                </h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {selectedIndex.description}
-                </p>
-              </div>
-              {loading && (
-                <div className="flex items-center text-blue-600">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
-                  Analyzing...
-                </div>
-              )}
-            </div>
-
-            {error && (
-              <div className="p-4 text-red-600 bg-red-50">
-                {error}
-              </div>
-            )}
-
-            {!loading && !error && stockData.length > 0 && (
-              <div className="ag-theme-alpine" style={{ height: 600, width: '100%' }}>
-                <AgGridReact
-                  rowData={stockData}
-                  columnDefs={stockColumnDefs}
-                  pagination={true}
-                  paginationPageSize={20}
-                  animateRows={true}
-                />
-              </div>
-            )}
-          </div>
-        )}
+    <div className="animate-fade-in">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white">📊 Market Analysis</h1>
+        <p className="mt-2 text-[var(--neutral-400)]">Select an index to view technical analysis and signals</p>
       </div>
+
+      {/* Master Grid: Indexes */}
+      <div className="card mb-8">
+        <div className="card-header">
+          <h2 className="text-lg font-medium text-white">Market Indexes</h2>
+        </div>
+        <div className="ag-theme-alpine" style={{ height: 300, width: '100%' }}>
+          <AgGridReact
+            rowData={indexRowData}
+            columnDefs={indexColumnDefs}
+            rowSelection="single"
+            onRowSelected={onIndexRowSelected}
+            pagination={true}
+            paginationPageSize={10}
+            animateRows={true}
+          />
+        </div>
+      </div>
+
+      {/* Detail View */}
+      {selectedIndex && (
+        <div className="card">
+          <div className="card-header flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-medium text-white">
+                {selectedIndex.name} Analysis
+              </h2>
+              <p className="mt-1 text-sm text-[var(--neutral-400)]">
+                {selectedIndex.description}
+              </p>
+            </div>
+            {loading && (
+              <div className="flex items-center text-[var(--primary-400)]">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[var(--primary-400)] mr-2"></div>
+                Analyzing...
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="p-4 text-[var(--danger-400)] bg-[var(--danger-500)]/10 border-t border-[var(--neutral-700)]">
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && stockData.length > 0 && (
+            <div className="ag-theme-alpine" style={{ height: 600, width: '100%' }}>
+              <AgGridReact
+                rowData={stockData}
+                columnDefs={stockColumnDefs}
+                pagination={true}
+                paginationPageSize={20}
+                animateRows={true}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

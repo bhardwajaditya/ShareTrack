@@ -141,331 +141,128 @@ export const fetchHistoricalData = async (symbol, period = '1y') => {
 import { sma, ema, rsi, atr, macd, bollingerbands, stochastic } from 'technicalindicators';
 
 // ============================================================
-// STRATEGY 1: Price Volume Breakout (PVB)
+// TREND-PULLBACK WEIGHTED STRATEGY SYSTEM
+// 3-Phase approach with weighted scoring (100 points total)
+// Phase 1 (Filter): 40% - PVB + Trend
+// Phase 2 (Setup): 15% - Stochastic + Bollinger  
+// Phase 3 (Trigger): 20% - MACD
+// Volume Validation: 25%
 // ============================================================
-const analyzePVB = (data) => {
-  if (data.length < 50) return { signal: 'NEUTRAL', reason: 'Insufficient data (need 50+ days)' };
+
+const analyzeWeightedStrategy = (data) => {
+  // Default insufficient data response
+  const insufficientResult = {
+    phase1: { passed: false, score: 0, reason: 'Insufficient data', priceAboveEma: false, volumeAboveAvg: false },
+    phase2: { passed: false, score: 0, reason: 'Insufficient data', nearLowerBB: false, stochBelow40: false },
+    phase3: { passed: false, score: 0, reason: 'Insufficient data', histogramUp: false, signalCross: false },
+    volume: { passed: false, score: 0, reason: 'Insufficient data', volumeSpike: false, brokeResistance: false },
+    totalScore: 0,
+    signal: 'NEUTRAL',
+    confidence: 'LOW',
+    isBullish: false
+  };
+
+  if (data.length < 50) return insufficientResult;
 
   const closes = data.map(d => d.close);
   const highs = data.map(d => d.high);
   const lows = data.map(d => d.low);
   const volumes = data.map(d => d.volume);
-
-  // Calculate 50 EMA
-  const ema50 = ema({ period: 50, values: closes });
-  const lastEma50 = ema50[ema50.length - 1];
-  const lastClose = closes[closes.length - 1];
-
-  // Calculate 20-day average volume
-  const avgVolume20 = sma({ period: 20, values: volumes });
-  const lastAvgVolume = avgVolume20[avgVolume20.length - 1];
-  const lastVolume = volumes[volumes.length - 1];
-
-  // Find resistance: max high of last 20 days (excluding last candle)
-  const lookbackHighs = highs.slice(-21, -1);
-  const resistanceLevel = Math.max(...lookbackHighs);
-
-  // Check conditions
-  const aboveEma50 = lastClose > lastEma50;
-  const brokeResistance = lastClose > resistanceLevel;
-  const volumeConfirmed = lastVolume >= 1.5 * lastAvgVolume;
-
-  let signal = 'NEUTRAL';
-  let reason = '';
-
-  if (aboveEma50 && brokeResistance && volumeConfirmed) {
-    signal = 'BUY';
-    reason = `Breakout above ${resistanceLevel.toFixed(2)} with ${(lastVolume / lastAvgVolume).toFixed(1)}x volume`;
-  } else if (!aboveEma50) {
-    signal = 'NEUTRAL';
-    reason = 'Price below 50 EMA';
-  } else if (brokeResistance && !volumeConfirmed) {
-    signal = 'NEUTRAL';
-    reason = 'Breakout without volume confirmation';
-  } else {
-    reason = 'No breakout signal';
-  }
-
-  return {
-    signal,
-    reason,
-    ema50: lastEma50?.toFixed(2) || 'N/A',
-    resistance: resistanceLevel.toFixed(2),
-    volumeRatio: (lastVolume / lastAvgVolume).toFixed(2)
-  };
-};
-
-// ============================================================
-// STRATEGY 2: VSA "No Supply" Pullback
-// ============================================================
-const analyzeVSA = (data) => {
-  if (data.length < 25) return { signal: 'NEUTRAL', reason: 'Insufficient data' };
-
-  const closes = data.map(d => d.close);
-  const highs = data.map(d => d.high);
-  const lows = data.map(d => d.low);
-  const volumes = data.map(d => d.volume);
-
-  // Check uptrend: Higher Highs and Higher Lows over last 20 days
-  const recentData = data.slice(-20);
-  let higherHighs = 0;
-  let higherLows = 0;
-  for (let i = 1; i < recentData.length; i++) {
-    if (recentData[i].high > recentData[i - 1].high) higherHighs++;
-    if (recentData[i].low > recentData[i - 1].low) higherLows++;
-  }
-  const isUptrend = higherHighs > 10 && higherLows > 10;
-
-  // Calculate 20 EMA for support reference
-  const ema20 = ema({ period: 20, values: closes });
-  const lastEma20 = ema20[ema20.length - 1];
-  const lastClose = closes[closes.length - 1];
-
-  // Check for "No Supply" candle (last 3 candles)
-  const last3 = data.slice(-3);
-  let noSupplyFound = false;
-  let noSupplyIndex = -1;
-
-  for (let i = 0; i < last3.length - 1; i++) {
-    const candle = last3[i];
-    const spread = candle.high - candle.low;
-    const avgSpread = (data.slice(-20).reduce((sum, d) => sum + (d.high - d.low), 0)) / 20;
-    const isNarrowRange = spread < avgSpread * 0.5;
-    const isRedCandle = candle.close < candle.open;
-    const isLowVolume = candle.volume < last3[i > 0 ? i - 1 : 0].volume && 
-                        (i > 1 ? candle.volume < last3[i - 2].volume : true);
-
-    if (isNarrowRange && isRedCandle && isLowVolume) {
-      noSupplyFound = true;
-      noSupplyIndex = i;
-    }
-  }
-
-  // Check if price is near 20 EMA (pullback to support)
-  const nearEma20 = Math.abs(lastClose - lastEma20) / lastClose < 0.02; // Within 2%
-
-  let signal = 'NEUTRAL';
-  let reason = '';
-
-  if (isUptrend && noSupplyFound && nearEma20) {
-    signal = 'BUY';
-    reason = 'No Supply candle found in uptrend pullback near 20 EMA';
-  } else if (!isUptrend) {
-    reason = 'Not in uptrend';
-  } else if (!noSupplyFound) {
-    reason = 'No "No Supply" candle detected';
-  } else {
-    reason = 'Conditions not met';
-  }
-
-  return {
-    signal,
-    reason,
-    uptrend: isUptrend ? 'Yes' : 'No',
-    ema20: lastEma20?.toFixed(2) || 'N/A'
-  };
-};
-
-// ============================================================
-// STRATEGY 3: Donchian Channel Trend Following
-// ============================================================
-const analyzeDonchian = (data) => {
-  if (data.length < 20) return { signal: 'NEUTRAL', reason: 'Insufficient data' };
-
-  const closes = data.map(d => d.close);
-  const highs = data.map(d => d.high);
-  const lows = data.map(d => d.low);
-
-  // Calculate Donchian Channel (20 period)
-  const period = 20;
-  const lookbackHighs = highs.slice(-period - 1, -1); // Last 20 highs excluding today
-  const lookbackLows = lows.slice(-period - 1, -1);   // Last 20 lows excluding today
-
-  const upperChannel = Math.max(...lookbackHighs);
-  const lowerChannel = Math.min(...lookbackLows);
-  const middleChannel = (upperChannel + lowerChannel) / 2;
-
   const lastClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
 
-  let signal = 'NEUTRAL';
-  let reason = '';
-
-  // Buy: Close above upper channel (new 20-day high)
-  if (lastClose > upperChannel) {
-    signal = 'BUY';
-    reason = `New 20-day high breakout above ${upperChannel.toFixed(2)}`;
-  }
-  // Sell: Close below middle band (quicker exit) or lower band
-  else if (lastClose < lowerChannel) {
-    signal = 'SELL';
-    reason = `Broke below 20-day low at ${lowerChannel.toFixed(2)}`;
-  } else if (lastClose < middleChannel && prevClose >= middleChannel) {
-    signal = 'SELL';
-    reason = `Crossed below middle band at ${middleChannel.toFixed(2)}`;
-  } else {
-    reason = 'Trading within channel';
-  }
-
-  return {
-    signal,
-    reason,
-    upper: upperChannel.toFixed(2),
-    middle: middleChannel.toFixed(2),
-    lower: lowerChannel.toFixed(2)
-  };
-};
-
-// ============================================================
-// STRATEGY 4: RSI + Supertrend Hybrid
-// ============================================================
-const analyzeRSISupertrend = (data) => {
-  if (data.length < 20) return { signal: 'NEUTRAL', reason: 'Insufficient data' };
-
-  const closes = data.map(d => d.close);
-  const highs = data.map(d => d.high);
-  const lows = data.map(d => d.low);
-
-  // Calculate RSI (14 period)
-  const rsiValues = rsi({ period: 14, values: closes });
-  const lastRsi = rsiValues[rsiValues.length - 1];
-  const prevRsi = rsiValues[rsiValues.length - 2];
-
-  // Calculate ATR for Supertrend (10 period, multiplier 3)
-  const atrPeriod = 10;
-  const multiplier = 3;
-  const atrValues = atr({ period: atrPeriod, high: highs, low: lows, close: closes });
-
-  // Calculate Supertrend
-  let supertrend = [];
-  let direction = []; // 1 = up (green), -1 = down (red)
-
-  for (let i = 0; i < closes.length; i++) {
-    if (i < atrPeriod) {
-      supertrend.push(null);
-      direction.push(0);
-      continue;
-    }
-
-    const atrIndex = i - atrPeriod;
-    if (atrIndex < 0 || atrIndex >= atrValues.length) {
-      supertrend.push(null);
-      direction.push(0);
-      continue;
-    }
-
-    const currentAtr = atrValues[atrIndex];
-    const hl2 = (highs[i] + lows[i]) / 2;
-    
-    const basicUpperBand = hl2 + (multiplier * currentAtr);
-    const basicLowerBand = hl2 - (multiplier * currentAtr);
-
-    let finalUpperBand = basicUpperBand;
-    let finalLowerBand = basicLowerBand;
-
-    if (i > atrPeriod && supertrend[i - 1] !== null) {
-      const prevSupertrend = supertrend[i - 1];
-      const prevDirection = direction[i - 1];
-      
-      // Adjust bands based on previous values
-      if (prevDirection === 1) { // Was bullish
-        finalLowerBand = Math.max(basicLowerBand, prevSupertrend);
-        if (closes[i] < finalLowerBand) {
-          supertrend.push(finalUpperBand);
-          direction.push(-1);
-        } else {
-          supertrend.push(finalLowerBand);
-          direction.push(1);
-        }
-      } else { // Was bearish
-        finalUpperBand = Math.min(basicUpperBand, prevSupertrend);
-        if (closes[i] > finalUpperBand) {
-          supertrend.push(finalLowerBand);
-          direction.push(1);
-        } else {
-          supertrend.push(finalUpperBand);
-          direction.push(-1);
-        }
-      }
-    } else {
-      // Initial direction based on close vs mid
-      if (closes[i] > hl2) {
-        supertrend.push(basicLowerBand);
-        direction.push(1);
-      } else {
-        supertrend.push(basicUpperBand);
-        direction.push(-1);
-      }
-    }
-  }
-
-  const lastDirection = direction[direction.length - 1];
-  const supertrendGreen = lastDirection === 1;
-  const rsiCrossedAbove60 = prevRsi < 60 && lastRsi >= 60;
-  const rsiAbove60 = lastRsi >= 60;
-  const rsiBelow40 = lastRsi < 40;
-
-  let signal = 'NEUTRAL';
-  let reason = '';
-
-  if (supertrendGreen && (rsiCrossedAbove60 || rsiAbove60)) {
-    signal = 'BUY';
-    reason = `Supertrend Green + RSI at ${lastRsi?.toFixed(1)}`;
-  } else if (!supertrendGreen || rsiBelow40) {
-    signal = 'SELL';
-    reason = supertrendGreen ? `RSI dropped to ${lastRsi?.toFixed(1)}` : 'Supertrend turned Red';
-  } else {
-    reason = 'No clear signal';
-  }
-
-  return {
-    signal,
-    reason,
-    rsi: lastRsi?.toFixed(2) || 'N/A',
-    supertrend: supertrendGreen ? 'Bullish' : 'Bearish'
-  };
-};
-
-// ============================================================
-// STRATEGY 5: Moving Average Crossover (Golden Cross / Death Cross)
-// ============================================================
-const analyzeMACrossover = (data) => {
-  if (data.length < 200) return { signal: 'NEUTRAL', reason: 'Need 200+ days of data' };
-
-  const closes = data.map(d => d.close);
+  // ============================================================
+  // PHASE 1: FILTER (40 points) - Must pass to not cap score
+  // Price > 50 EMA (20 pts) + Volume > Average (20 pts)
+  // ============================================================
   const ema50Values = ema({ period: 50, values: closes });
-  const ema200Values = ema({ period: 200, values: closes });
-
   const lastEma50 = ema50Values[ema50Values.length - 1];
-  const prevEma50 = ema50Values[ema50Values.length - 2];
-  const lastEma200 = ema200Values[ema200Values.length - 1];
-  const prevEma200 = ema200Values[ema200Values.length - 2];
+  const priceAboveEma50 = lastClose > lastEma50;
 
-  let signal = 'NEUTRAL';
-  let reason = '';
+  const avgVolume20 = sma({ period: 20, values: volumes });
+  const lastAvgVolume20 = avgVolume20[avgVolume20.length - 1];
+  const lastVolume = volumes[volumes.length - 1];
+  const volumeAboveAvg = lastVolume > lastAvgVolume20;
 
-  if (prevEma50 <= prevEma200 && lastEma50 > lastEma200) {
-    signal = 'BUY';
-    reason = 'Golden Cross (50 EMA crossed above 200 EMA)';
-  } else if (prevEma50 >= prevEma200 && lastEma50 < lastEma200) {
-    signal = 'SELL';
-    reason = 'Death Cross (50 EMA crossed below 200 EMA)';
-  } else if (lastEma50 > lastEma200) {
-    reason = 'Bullish trend (50 EMA > 200 EMA)';
+  let phase1Score = 0;
+  let phase1Reasons = [];
+  
+  if (priceAboveEma50) {
+    phase1Score += 20;
+    phase1Reasons.push(`Price ₹${lastClose.toFixed(0)} > 50 EMA ₹${lastEma50.toFixed(0)}`);
   } else {
-    reason = 'Bearish trend (50 EMA < 200 EMA)';
+    phase1Reasons.push(`Price below 50 EMA (₹${lastEma50.toFixed(0)})`);
+  }
+  
+  if (volumeAboveAvg) {
+    phase1Score += 20;
+    phase1Reasons.push(`Volume ${(lastVolume/lastAvgVolume20).toFixed(1)}x avg`);
+  } else {
+    phase1Reasons.push(`Low volume (${(lastVolume/lastAvgVolume20).toFixed(1)}x)`);
   }
 
-  return { signal, reason, ema50: lastEma50?.toFixed(2), ema200: lastEma200?.toFixed(2) };
-};
+  const phase1Passed = priceAboveEma50 && volumeAboveAvg;
 
-// ============================================================
-// STRATEGY 6: MACD Crossover
-// ============================================================
-const analyzeMACDCrossover = (data) => {
-  if (data.length < 35) return { signal: 'NEUTRAL', reason: 'Insufficient data' };
+  const phase1 = {
+    passed: phase1Passed,
+    score: phase1Score,
+    reason: phase1Reasons.join(', '),
+    priceAboveEma: priceAboveEma50,
+    volumeAboveAvg: volumeAboveAvg,
+    ema50: lastEma50?.toFixed(2),
+    volumeRatio: (lastVolume/lastAvgVolume20).toFixed(2)
+  };
 
-  const closes = data.map(d => d.close);
+  // ============================================================
+  // PHASE 2: SETUP (15 points) - Oscillators for entry optimization
+  // Near Lower BB (8 pts) + Stochastic < 40 (7 pts)
+  // Note: Using 40 threshold instead of 20 for bull markets
+  // ============================================================
+  const bbResult = bollingerbands({ period: 20, values: closes, stdDev: 2 });
+  const lastBB = bbResult[bbResult.length - 1] || {};
+  const percentB = lastBB.lower ? (lastClose - lastBB.lower) / (lastBB.upper - lastBB.lower) : 0.5;
+  const nearLowerBB = percentB < 0.2; // Within 20% of lower band (near lower band)
+
+  const stochResult = stochastic({
+    high: highs,
+    low: lows,
+    close: closes,
+    period: 14,
+    signalPeriod: 3
+  });
+  const lastStoch = stochResult[stochResult.length - 1] || { k: 50, d: 50 };
+  const stochBelow40 = lastStoch.k < 40; // Raised threshold for bull market
+
+  let phase2Score = 0;
+  let phase2Reasons = [];
+
+  if (nearLowerBB) {
+    phase2Score += 8;
+    phase2Reasons.push(`Near Lower BB (%B: ${(percentB * 100).toFixed(0)}%)`);
+  }
+  
+  if (stochBelow40) {
+    phase2Score += 7;
+    phase2Reasons.push(`Stoch pullback (%K: ${lastStoch.k?.toFixed(0)})`);
+  }
+
+  const phase2Passed = nearLowerBB || stochBelow40;
+  
+  const phase2 = {
+    passed: phase2Passed,
+    score: phase2Score,
+    reason: phase2Reasons.length > 0 ? phase2Reasons.join(', ') : 'No pullback setup',
+    nearLowerBB,
+    stochBelow40,
+    percentB: (percentB * 100).toFixed(1),
+    stochK: lastStoch.k?.toFixed(1),
+    stochD: lastStoch.d?.toFixed(1)
+  };
+
+  // ============================================================
+  // PHASE 3: TRIGGER (20 points) - MACD momentum confirmation
+  // Histogram ticking up (10 pts) + Signal Cross (10 pts)
+  // ============================================================
   const macdResult = macd({
     values: closes,
     fastPeriod: 12,
@@ -475,121 +272,445 @@ const analyzeMACDCrossover = (data) => {
     SimpleMASignal: false
   });
 
-  if (macdResult.length < 2) return { signal: 'NEUTRAL', reason: 'MACD not ready' };
+  const lastMACD = macdResult[macdResult.length - 1] || {};
+  const prevMACD = macdResult[macdResult.length - 2] || {};
+  
+  const histogramUp = lastMACD.histogram !== undefined && prevMACD.histogram !== undefined 
+    && lastMACD.histogram > prevMACD.histogram;
+  const signalCross = prevMACD.MACD !== undefined && lastMACD.MACD !== undefined
+    && prevMACD.MACD <= prevMACD.signal && lastMACD.MACD > lastMACD.signal;
 
-  const last = macdResult[macdResult.length - 1];
-  const prev = macdResult[macdResult.length - 2];
+  let phase3Score = 0;
+  let phase3Reasons = [];
 
-  if (!last || !prev || last.MACD === undefined) {
-    return { signal: 'NEUTRAL', reason: 'MACD calculation pending' };
+  if (histogramUp) {
+    phase3Score += 10;
+    phase3Reasons.push(`MACD histogram rising (${lastMACD.histogram?.toFixed(2)})`);
+  }
+  
+  if (signalCross) {
+    phase3Score += 10;
+    phase3Reasons.push('MACD bullish crossover');
   }
 
+  const phase3Passed = histogramUp || signalCross;
+  
+  const phase3 = {
+    passed: phase3Passed,
+    score: phase3Score,
+    reason: phase3Reasons.length > 0 ? phase3Reasons.join(', ') : 'No momentum trigger',
+    histogramUp,
+    signalCross,
+    histogram: lastMACD.histogram?.toFixed(2),
+    macd: lastMACD.MACD?.toFixed(2),
+    signal: lastMACD.signal?.toFixed(2)
+  };
+
+  // ============================================================
+  // VOLUME VALIDATION (25 points) - Confirms move legitimacy
+  // Volume spike > 1.3x (15 pts) + Broke resistance (10 pts)
+  // ============================================================
+  const avgVolume10 = sma({ period: 10, values: volumes });
+  const lastAvgVolume10 = avgVolume10[avgVolume10.length - 1];
+  const volumeSpike = lastVolume > lastAvgVolume10 * 1.3;
+
+  // Find 20-day resistance
+  const lookbackHighs = highs.slice(-21, -1);
+  const resistanceLevel = Math.max(...lookbackHighs);
+  const brokeResistance = lastClose > resistanceLevel;
+
+  let volumeScore = 0;
+  let volumeReasons = [];
+
+  if (volumeSpike) {
+    volumeScore += 15;
+    volumeReasons.push(`Volume spike ${(lastVolume/lastAvgVolume10).toFixed(1)}x`);
+  }
+  
+  if (brokeResistance) {
+    volumeScore += 10;
+    volumeReasons.push(`Broke resistance ₹${resistanceLevel.toFixed(0)}`);
+  }
+
+  const volumePassed = volumeSpike || brokeResistance;
+  
+  const volumeResult = {
+    passed: volumePassed,
+    score: volumeScore,
+    reason: volumeReasons.length > 0 ? volumeReasons.join(', ') : 'No volume confirmation',
+    volumeSpike,
+    brokeResistance,
+    volumeRatio: (lastVolume/lastAvgVolume10).toFixed(2),
+    resistance: resistanceLevel.toFixed(2)
+  };
+
+  // ============================================================
+  // CALCULATE TOTAL SCORE & SIGNAL
+  // If Phase 1 fails, score is capped at 15 max (counter-trend protection)
+  // ============================================================
+  let totalScore = phase1Score + phase2Score + phase3Score + volumeScore;
+  
+  // CRITICAL: If Phase 1 (filter) fails, cap the score at 15 max
+  if (!phase1Passed) {
+    totalScore = Math.min(totalScore, 15);
+  }
+
+  // Determine signal and confidence based on score
   let signal = 'NEUTRAL';
-  let reason = '';
+  let confidence = 'LOW';
+  let isBullish = true;
 
-  if (prev.MACD <= prev.signal && last.MACD > last.signal) {
-    signal = 'BUY';
-    reason = `MACD Bullish Crossover (Hist: ${last.histogram?.toFixed(2)})`;
-  } else if (prev.MACD >= prev.signal && last.MACD < last.signal) {
-    signal = 'SELL';
-    reason = `MACD Bearish Crossover (Hist: ${last.histogram?.toFixed(2)})`;
+  // Check for SELL conditions (bearish signals)
+  const macdBearishCross = prevMACD.MACD !== undefined && lastMACD.MACD !== undefined
+    && prevMACD.MACD >= prevMACD.signal && lastMACD.MACD < lastMACD.signal;
+  const priceBelowEma = lastClose < lastEma50;
+  const stochOverbought = lastStoch.k > 80 && lastStoch.d > 80;
+  
+  // Count bearish signals
+  let bearishScore = 0;
+  if (priceBelowEma) bearishScore += 40;
+  if (macdBearishCross) bearishScore += 20;
+  if (stochOverbought && lastStoch.k < lastStoch.d) bearishScore += 15;
+  if (lastMACD.histogram < 0 && lastMACD.histogram < prevMACD.histogram) bearishScore += 15;
+
+  if (bearishScore >= 60) {
+    isBullish = false;
+    totalScore = bearishScore;
+    if (bearishScore >= 80) {
+      signal = 'STRONG SELL';
+      confidence = 'HIGH';
+    } else if (bearishScore >= 60) {
+      signal = 'SELL';
+      confidence = 'MEDIUM';
+    }
   } else {
-    reason = `MACD: ${last.MACD?.toFixed(2)}, Signal: ${last.signal?.toFixed(2)}`;
+    // Bullish signals
+    if (totalScore >= 80) {
+      signal = 'STRONG BUY';
+      confidence = 'HIGH';
+    } else if (totalScore >= 60) {
+      signal = 'BUY';
+      confidence = 'MEDIUM';
+    } else if (totalScore >= 40) {
+      signal = 'NEUTRAL';
+      confidence = 'LOW';
+    } else if (totalScore >= 20) {
+      signal = 'SELL';
+      confidence = 'MEDIUM';
+    } else {
+      signal = 'STRONG SELL';
+      confidence = 'HIGH';
+    }
   }
 
-  return { signal, reason, histogram: last.histogram?.toFixed(2) };
+  return {
+    phase1,
+    phase2,
+    phase3,
+    volume: volumeResult,
+    totalScore,
+    signal,
+    confidence,
+    isBullish
+  };
 };
 
 // ============================================================
-// STRATEGY 7: Bollinger Bands Mean Reversion
+// STRATEGY 2: CONNORS RSI-2 (Larry Connors - Mean Reversion)
+// Buy deep oversold dips in uptrending stocks
 // ============================================================
-const analyzeBollingerBands = (data) => {
-  if (data.length < 20) return { signal: 'NEUTRAL', reason: 'Insufficient data' };
+const analyzeConnorsRSI = (data) => {
+  const insufficientResult = {
+    signal: 'NEUTRAL',
+    score: 0,
+    reason: 'Insufficient data',
+    aboveSma200: false,
+    rsi2: null,
+    aboveSma5: false
+  };
+
+  if (data.length < 200) return insufficientResult;
 
   const closes = data.map(d => d.close);
-  const bbResult = bollingerbands({ period: 20, values: closes, stdDev: 2 });
-
-  if (bbResult.length < 2) return { signal: 'NEUTRAL', reason: 'BB not ready' };
-
-  const last = bbResult[bbResult.length - 1];
-  const prev = bbResult[bbResult.length - 2];
   const lastClose = closes[closes.length - 1];
-  const prevClose = closes[closes.length - 2];
 
-  if (!last || !last.lower) return { signal: 'NEUTRAL', reason: 'BB calculation pending' };
+  // 200 SMA - Long-term trend filter
+  const sma200Values = sma({ period: 200, values: closes });
+  const lastSma200 = sma200Values[sma200Values.length - 1];
+  const aboveSma200 = lastClose > lastSma200;
 
-  const percentB = (lastClose - last.lower) / (last.upper - last.lower);
+  // RSI with period 2 (very short-term oversold detection)
+  const rsi2Values = rsi({ period: 2, values: closes });
+  const lastRsi2 = rsi2Values[rsi2Values.length - 1];
+  const prevRsi2 = rsi2Values[rsi2Values.length - 2];
+
+  // 5 SMA - Exit timing
+  const sma5Values = sma({ period: 5, values: closes });
+  const lastSma5 = sma5Values[sma5Values.length - 1];
+  const aboveSma5 = lastClose > lastSma5;
+
+  // Calculate score and signals
+  let score = 0;
+  let reasons = [];
   let signal = 'NEUTRAL';
-  let reason = '';
 
-  if (lastClose <= last.lower && prevClose > prev.lower) {
-    signal = 'BUY';
-    reason = 'Price touched Lower Band';
-  } else if (prevClose <= prev.lower && lastClose > last.lower) {
-    signal = 'BUY';
-    reason = 'Bounce from Lower Band';
-  } else if (lastClose >= last.upper && prevClose < prev.upper) {
-    signal = 'SELL';
-    reason = 'Price touched Upper Band';
-  } else if (prevClose >= prev.upper && lastClose < last.upper) {
-    signal = 'SELL';
-    reason = 'Rejection from Upper Band';
+  // Must be in uptrend (above 200 SMA)
+  if (aboveSma200) {
+    score += 30;
+    reasons.push('Above 200 SMA (uptrend)');
+
+    // BUY: RSI(2) < 10 (deeply oversold)
+    if (lastRsi2 < 5) {
+      score += 40;
+      reasons.push(`RSI(2) = ${lastRsi2.toFixed(1)} (extreme oversold)`);
+      signal = 'STRONG BUY';
+    } else if (lastRsi2 < 10) {
+      score += 30;
+      reasons.push(`RSI(2) = ${lastRsi2.toFixed(1)} (oversold)`);
+      signal = 'BUY';
+    } else if (lastRsi2 < 20) {
+      score += 15;
+      reasons.push(`RSI(2) = ${lastRsi2.toFixed(1)} (pullback)`);
+    }
+
+    // EXIT: Price closes above 5 SMA (take profit)
+    if (aboveSma5 && prevRsi2 < 20 && lastRsi2 >= 20) {
+      score += 20;
+      reasons.push('Crossed above 5 SMA (exit signal)');
+      signal = 'SELL';
+    }
   } else {
-    reason = `%B: ${(percentB * 100).toFixed(1)}%`;
+    reasons.push('Below 200 SMA (no trade)');
+    signal = 'NEUTRAL';
   }
 
-  return { signal, reason, percentB: (percentB * 100).toFixed(1) };
+  // Avoid buying if already overbought
+  if (lastRsi2 > 90) {
+    signal = 'SELL';
+    reasons = ['RSI(2) overbought > 90'];
+    score = 20;
+  }
+
+  return {
+    signal,
+    score,
+    reason: reasons.join(', ') || 'No setup',
+    aboveSma200,
+    rsi2: lastRsi2?.toFixed(1),
+    aboveSma5,
+    sma200: lastSma200?.toFixed(2)
+  };
 };
 
 // ============================================================
-// STRATEGY 8: Stochastic Oscillator
+// STRATEGY 3: TURTLE SOUP / DONCHIAN BREAKOUT (Richard Dennis)
+// Buy breakout above 20-day high, exit at 10-day low
 // ============================================================
-const analyzeStochastic = (data) => {
-  if (data.length < 14) return { signal: 'NEUTRAL', reason: 'Insufficient data' };
+const analyzeTurtleSoup = (data) => {
+  const insufficientResult = {
+    signal: 'NEUTRAL',
+    score: 0,
+    reason: 'Insufficient data',
+    breakout: false,
+    newHigh20: false,
+    above10Low: true
+  };
+
+  if (data.length < 50) return insufficientResult;
 
   const closes = data.map(d => d.close);
   const highs = data.map(d => d.high);
   const lows = data.map(d => d.low);
+  const lastClose = closes[closes.length - 1];
+  const prevClose = closes[closes.length - 2];
 
-  const stochResult = stochastic({
-    high: highs,
-    low: lows,
-    close: closes,
-    period: 14,
-    signalPeriod: 3
-  });
+  // Donchian Channel - 20 period for entry
+  const last20Highs = highs.slice(-21, -1); // Exclude today
+  const donchian20High = Math.max(...last20Highs);
+  
+  // Donchian Channel - 10 period for exit
+  const last10Lows = lows.slice(-11, -1);
+  const donchian10Low = Math.min(...last10Lows);
 
-  if (stochResult.length < 2) return { signal: 'NEUTRAL', reason: 'Stochastic not ready' };
+  // ATR for stop loss calculation
+  const atrValues = atr({ period: 14, high: highs, low: lows, close: closes });
+  const lastAtr = atrValues[atrValues.length - 1];
 
-  const last = stochResult[stochResult.length - 1];
-  const prev = stochResult[stochResult.length - 2];
+  // Entry: Price breaks above 20-day high
+  const brokeOut = lastClose > donchian20High;
+  const freshBreakout = lastClose > donchian20High && prevClose <= donchian20High;
 
-  if (!last || last.k === undefined) return { signal: 'NEUTRAL', reason: 'Stochastic pending' };
+  // Exit: Price touches 10-day low
+  const touchedExit = lastClose <= donchian10Low;
 
+  // Trend strength: How far above the 20-day low
+  const last20Lows = lows.slice(-21, -1);
+  const donchian20Low = Math.min(...last20Lows);
+  const range = donchian20High - donchian20Low;
+  const positionInRange = range > 0 ? (lastClose - donchian20Low) / range : 0.5;
+
+  // Calculate score
+  let score = 0;
+  let reasons = [];
   let signal = 'NEUTRAL';
-  let reason = '';
 
-  if (last.k < 20 && last.d < 20 && prev.k <= prev.d && last.k > last.d) {
+  if (freshBreakout) {
+    score += 50;
+    reasons.push(`Breakout above 20-day high ₹${donchian20High.toFixed(0)}`);
+    signal = 'STRONG BUY';
+  } else if (brokeOut) {
+    score += 30;
+    reasons.push(`Above 20-day high`);
     signal = 'BUY';
-    reason = `Oversold + Bullish Cross (%K: ${last.k.toFixed(1)})`;
-  } else if (prev.k < 20 && last.k >= 20 && last.k > last.d) {
-    signal = 'BUY';
-    reason = `Exiting Oversold (%K: ${last.k.toFixed(1)})`;
-  } else if (last.k > 80 && last.d > 80 && prev.k >= prev.d && last.k < last.d) {
-    signal = 'SELL';
-    reason = `Overbought + Bearish Cross (%K: ${last.k.toFixed(1)})`;
-  } else if (prev.k > 80 && last.k <= 80 && last.k < last.d) {
-    signal = 'SELL';
-    reason = `Exiting Overbought (%K: ${last.k.toFixed(1)})`;
-  } else {
-    reason = `%K: ${last.k.toFixed(1)}, %D: ${last.d.toFixed(1)}`;
   }
 
-  return { signal, reason, k: last.k.toFixed(1), d: last.d.toFixed(1) };
+  // Add points for strong position
+  if (positionInRange > 0.8) {
+    score += 20;
+    reasons.push('Near top of range');
+  } else if (positionInRange > 0.5) {
+    score += 10;
+    reasons.push('Upper half of range');
+  }
+
+  // Pyramiding opportunity: If trending strongly
+  if (brokeOut && lastAtr > 0) {
+    const atrRatio = (lastClose - donchian20High) / lastAtr;
+    if (atrRatio >= 1) {
+      score += 20;
+      reasons.push(`+${atrRatio.toFixed(1)} ATR (pyramid)` );
+    }
+  }
+
+  // EXIT signal
+  if (touchedExit) {
+    signal = 'SELL';
+    reasons = [`Hit 10-day low ₹${donchian10Low.toFixed(0)} (exit)`];
+    score = 15;
+  }
+
+  return {
+    signal,
+    score,
+    reason: reasons.join(', ') || 'No breakout',
+    breakout: brokeOut,
+    newHigh20: freshBreakout,
+    above10Low: !touchedExit,
+    donchian20High: donchian20High?.toFixed(2),
+    donchian10Low: donchian10Low?.toFixed(2),
+    atr: lastAtr?.toFixed(2)
+  };
 };
 
 // ============================================================
-// MAIN ANALYSIS FUNCTION
+// STRATEGY 4: OPENING RANGE BREAKOUT (Toby Crabel)
+// For daily data: Uses first few days of month/week as "range"
+// Adapted for EOD: Use recent consolidation range
+// ============================================================
+const analyzeOpeningRange = (data) => {
+  const insufficientResult = {
+    signal: 'NEUTRAL',
+    score: 0,
+    reason: 'Insufficient data',
+    breakout: false,
+    aboveVwap: false,
+    volumeConfirm: false
+  };
+
+  if (data.length < 20) return insufficientResult;
+
+  const closes = data.map(d => d.close);
+  const highs = data.map(d => d.high);
+  const lows = data.map(d => d.low);
+  const volumes = data.map(d => d.volume);
+  const lastClose = closes[closes.length - 1];
+  const prevClose = closes[closes.length - 2];
+
+  // Define "Opening Range" using last 5 days consolidation
+  const rangeData = data.slice(-6, -1); // Last 5 days excluding today
+  const rangeHigh = Math.max(...rangeData.map(d => d.high));
+  const rangeLow = Math.min(...rangeData.map(d => d.low));
+  const rangeWidth = rangeHigh - rangeLow;
+
+  // Calculate VWAP approximation (typical price * volume weighted)
+  const recentData = data.slice(-10);
+  let vwapNumerator = 0;
+  let vwapDenominator = 0;
+  recentData.forEach(d => {
+    const typicalPrice = (d.high + d.low + d.close) / 3;
+    vwapNumerator += typicalPrice * d.volume;
+    vwapDenominator += d.volume;
+  });
+  const vwap = vwapDenominator > 0 ? vwapNumerator / vwapDenominator : lastClose;
+  const aboveVwap = lastClose > vwap;
+
+  // Volume confirmation
+  const avgVolume5 = sma({ period: 5, values: volumes });
+  const lastAvgVolume = avgVolume5[avgVolume5.length - 1];
+  const lastVolume = volumes[volumes.length - 1];
+  const volumeSpike = lastVolume > lastAvgVolume * 1.3;
+
+  // Breakout detection
+  const brokeHigh = lastClose > rangeHigh && prevClose <= rangeHigh;
+  const aboveRange = lastClose > rangeHigh;
+  const brokeLow = lastClose < rangeLow && prevClose >= rangeLow;
+  const belowRange = lastClose < rangeLow;
+
+  // Calculate score
+  let score = 0;
+  let reasons = [];
+  let signal = 'NEUTRAL';
+
+  // Bullish breakout
+  if (brokeHigh) {
+    score += 35;
+    reasons.push(`Broke range high ₹${rangeHigh.toFixed(0)}`);
+    
+    if (aboveVwap) {
+      score += 20;
+      reasons.push('Above VWAP');
+    }
+    
+    if (volumeSpike) {
+      score += 25;
+      reasons.push(`Volume ${(lastVolume/lastAvgVolume).toFixed(1)}x`);
+    }
+
+    signal = score >= 60 ? 'BUY' : 'NEUTRAL';
+    if (score >= 80) signal = 'STRONG BUY';
+  } else if (aboveRange && aboveVwap) {
+    score += 30;
+    reasons.push('Holding above range');
+    if (volumeSpike) score += 15;
+    signal = 'BUY';
+  }
+
+  // Bearish breakdown
+  if (brokeLow || belowRange) {
+    signal = 'SELL';
+    reasons = [`Below range low ₹${rangeLow.toFixed(0)}`];
+    score = 20;
+  }
+
+  // Target calculation
+  const target = rangeHigh + (rangeWidth * 2);
+
+  return {
+    signal,
+    score,
+    reason: reasons.join(', ') || 'In range',
+    breakout: brokeHigh || aboveRange,
+    aboveVwap,
+    volumeConfirm: volumeSpike,
+    rangeHigh: rangeHigh?.toFixed(2),
+    rangeLow: rangeLow?.toFixed(2),
+    vwap: vwap?.toFixed(2),
+    target: target?.toFixed(2)
+  };
+};
+
+// ============================================================
+// MAIN ANALYSIS FUNCTION - Using All 4 Strategies
 // ============================================================
 export const fetchIndexAnalysis = async (indexSymbol) => {
   try {
@@ -605,7 +726,7 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
     const results = await Promise.all(chunks.map(async (chunk) => {
       const symbols = chunk.map(s => s.symbol).join(',');
       try {
-        // Fetch 1 year data for proper analysis (MA Crossover needs 200+ days)
+        // Fetch 1 year data for proper analysis
         const response = await fetch(`/api/stock-data?symbols=${symbols}&period=1y&interval=1d`);
         if (!response.ok) return {};
         return await response.json();
@@ -617,24 +738,22 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
 
     const combinedData = Object.assign({}, ...results);
 
-    // 3. Calculate all 8 strategies for each stock
+    // 3. Calculate all 4 strategies for each stock
     return stocks.map(stock => {
       const data = combinedData[stock.symbol];
+      const defaultStrategy = { signal: 'NEUTRAL', score: 0, reason: 'Insufficient data' };
+      
       if (!data || data.length < 50) {
         return {
           ...stock,
           lastPrice: data?.[data.length - 1]?.close || null,
-          pvb: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          vsa: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          donchian: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          rsiSupertrend: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          maCrossover: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          macdCrossover: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          bollingerBands: { signal: 'NEUTRAL', reason: 'Insufficient data' },
-          stochastic: { signal: 'NEUTRAL', reason: 'Insufficient data' },
+          trendPullback: defaultStrategy,
+          connorsRSI: defaultStrategy,
+          turtleSoup: defaultStrategy,
+          openingRange: defaultStrategy,
           overallSignal: 'NEUTRAL',
-          buyCount: 0,
-          sellCount: 0
+          overallScore: 0,
+          buyCount: 0
         };
       }
 
@@ -643,47 +762,73 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
       const prevClose = closes[closes.length - 2];
       const change = ((lastClose - prevClose) / prevClose * 100).toFixed(2);
 
-      // Run all 8 strategies
-      const pvb = analyzePVB(data);
-      const vsa = analyzeVSA(data);
-      const donchian = analyzeDonchian(data);
-      const rsiSupertrend = analyzeRSISupertrend(data);
-      const maCrossover = analyzeMACrossover(data);
-      const macdCrossover = analyzeMACDCrossover(data);
-      const bollingerBands = analyzeBollingerBands(data);
-      const stochasticResult = analyzeStochastic(data);
+      // Run all 4 strategies
+      const trendPullbackResult = analyzeWeightedStrategy(data);
+      const connorsRSIResult = analyzeConnorsRSI(data);
+      const turtleSoupResult = analyzeTurtleSoup(data);
+      const openingRangeResult = analyzeOpeningRange(data);
 
-      // Count signals from all 8 strategies
+      // Count BUY signals
       const signals = [
-        pvb.signal, vsa.signal, donchian.signal, rsiSupertrend.signal,
-        maCrossover.signal, macdCrossover.signal, bollingerBands.signal, stochasticResult.signal
+        trendPullbackResult.signal,
+        connorsRSIResult.signal,
+        turtleSoupResult.signal,
+        openingRangeResult.signal
       ];
-      const buyCount = signals.filter(s => s === 'BUY').length;
-      const sellCount = signals.filter(s => s === 'SELL').length;
+      const buyCount = signals.filter(s => s === 'BUY' || s === 'STRONG BUY').length;
+      const sellCount = signals.filter(s => s === 'SELL' || s === 'STRONG SELL').length;
 
-      // Determine overall signal (adjusted thresholds for 8 strategies)
+      // Overall score
+      const overallScore = Math.round(
+        (trendPullbackResult.totalScore + 
+         connorsRSIResult.score + 
+         turtleSoupResult.score + 
+         openingRangeResult.score) / 4
+      );
+
+      // Overall signal
       let overallSignal = 'NEUTRAL';
-      if (buyCount >= 5) overallSignal = 'STRONG BUY';
-      else if (buyCount >= 3) overallSignal = 'BUY';
-      else if (sellCount >= 5) overallSignal = 'STRONG SELL';
-      else if (sellCount >= 3) overallSignal = 'SELL';
+      if (buyCount >= 3) overallSignal = 'STRONG BUY';
+      else if (buyCount >= 2) overallSignal = 'BUY';
+      else if (sellCount >= 3) overallSignal = 'STRONG SELL';
+      else if (sellCount >= 2) overallSignal = 'SELL';
 
       return {
         ...stock,
         lastPrice: lastClose,
         change: parseFloat(change),
         volume: data[data.length - 1].volume,
-        pvb,
-        vsa,
-        donchian,
-        rsiSupertrend,
-        maCrossover,
-        macdCrossover,
-        bollingerBands,
-        stochastic: stochasticResult,
+        // Strategy 1: Trend-Pullback
+        trendPullback: {
+          signal: trendPullbackResult.signal,
+          score: trendPullbackResult.totalScore,
+          confidence: trendPullbackResult.confidence,
+          reason: trendPullbackResult.phase1?.reason
+        },
+        // Strategy 2: Connors RSI-2
+        connorsRSI: {
+          signal: connorsRSIResult.signal,
+          score: connorsRSIResult.score,
+          rsi2: connorsRSIResult.rsi2,
+          reason: connorsRSIResult.reason
+        },
+        // Strategy 3: Turtle Soup
+        turtleSoup: {
+          signal: turtleSoupResult.signal,
+          score: turtleSoupResult.score,
+          breakout: turtleSoupResult.breakout,
+          reason: turtleSoupResult.reason
+        },
+        // Strategy 4: Opening Range
+        openingRange: {
+          signal: openingRangeResult.signal,
+          score: openingRangeResult.score,
+          breakout: openingRangeResult.breakout,
+          reason: openingRangeResult.reason
+        },
         overallSignal,
-        buyCount,
-        sellCount
+        overallScore,
+        buyCount
       };
     });
 

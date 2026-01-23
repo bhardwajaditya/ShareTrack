@@ -23,8 +23,8 @@ export default function SMAAnalysis() {
       sortable: true,
       valueFormatter: params => params.value ? params.value.toFixed(2) : '',
       cellStyle: params => {
-        if (params.value < 30) return { color: 'green', fontWeight: 'bold' };
-        if (params.value > 70) return { color: 'red', fontWeight: 'bold' };
+        if (params.value < 30) return { color: '#4ade80', fontWeight: 'bold' };
+        if (params.value > 70) return { color: '#f87171', fontWeight: 'bold' };
         return null;
       }
     },
@@ -37,7 +37,7 @@ export default function SMAAnalysis() {
         if (!macd) return null;
         return macd.MACD > macd.signal ? 'Bullish' : 'Bearish';
       },
-      cellStyle: params => params.value === 'Bullish' ? { color: 'green' } : { color: 'red' }
+      cellStyle: params => params.value === 'Bullish' ? { color: '#4ade80' } : { color: '#f87171' }
     },
     { 
       field: 'indicators.bb', 
@@ -52,8 +52,8 @@ export default function SMAAnalysis() {
         return 'Neutral';
       },
       cellStyle: params => {
-        if (params.value === 'Oversold') return { color: 'green' };
-        if (params.value === 'Overbought') return { color: 'red' };
+        if (params.value === 'Oversold') return { color: '#4ade80' };
+        if (params.value === 'Overbought') return { color: '#f87171' };
         return null;
       }
     },
@@ -143,45 +143,44 @@ export default function SMAAnalysis() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-900">Loading Technical Analysis...</h2>
-          <p className="text-gray-600">Calculating indicators for NIFTY 50 stocks</p>
-        </div>
+      <div className="animate-fade-in flex flex-col justify-center items-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--primary-500)] mb-4"></div>
+        <h2 className="text-xl font-semibold text-white">Loading Technical Analysis...</h2>
+        <p className="text-[var(--neutral-400)]">Calculating indicators for NIFTY 50 stocks</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold text-red-600">Error: {error}</h2>
+      <div className="animate-fade-in flex flex-col justify-center items-center py-20">
+        <div className="bg-[var(--danger-500)]/10 border border-[var(--danger-500)]/30 text-[var(--danger-400)] px-6 py-4 rounded-lg">
+          <h2 className="text-xl font-semibold">Error: {error}</h2>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-      <div className="relative py-3 sm:max-w-7xl sm:mx-auto w-full px-4">
-        <div className="relative px-4 py-10 bg-white shadow-lg sm:rounded-3xl sm:p-20">
-          <div className="max-w-full mx-auto">
-            <div className="flex justify-between items-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900">Technical Analysis (NIFTY 50)</h1>
-            </div>
-            <div className="ag-theme-alpine" style={{ height: 600, width: '100%' }}>
-              <AgGridReact
-                rowData={stockData}
-                columnDefs={columnDefs}
-                defaultColDef={defaultColDef}
-                pagination={true}
-                paginationPageSize={20}
-                animateRows={true}
-                enableCellTextSelection={true}
-              />
-            </div>
-          </div>
+    <div className="animate-fade-in">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white">📊 Technical Analysis (NIFTY 50)</h1>
+        <p className="mt-2 text-[var(--neutral-400)]">Real-time technical indicators for all NIFTY 50 stocks</p>
+      </div>
+      
+      {/* Grid */}
+      <div className="card">
+        <div className="ag-theme-alpine" style={{ height: 600, width: '100%' }}>
+          <AgGridReact
+            rowData={stockData}
+            columnDefs={columnDefs}
+            defaultColDef={defaultColDef}
+            pagination={true}
+            paginationPageSize={20}
+            animateRows={true}
+            enableCellTextSelection={true}
+          />
         </div>
       </div>
     </div>

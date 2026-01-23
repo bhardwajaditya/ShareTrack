@@ -3,14 +3,17 @@ import { MongoClient } from 'mongodb';
 const MONGODB_URI = process.env.MONGODB_URI;
 const MONGODB_DB = process.env.MONGODB_DB || 'sharetrack';
 
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable');
-}
+// Allow the app to run without MongoDB for basic functionality
+const isMongDBConfigured = !!MONGODB_URI;
 
 let cachedClient = null;
 let cachedDb = null;
 
 export async function connectToDatabase() {
+  if (!isMongDBConfigured) {
+    throw new Error('MongoDB is not configured. Please set MONGODB_URI environment variable.');
+  }
+
   if (cachedClient && cachedDb) {
     return { client: cachedClient, db: cachedDb };
   }
@@ -27,4 +30,19 @@ export async function connectToDatabase() {
 export async function getStockCollection() {
   const { db } = await connectToDatabase();
   return db.collection('stocks');
-} 
+}
+
+export async function getPortfolioCollection() {
+  const { db } = await connectToDatabase();
+  return db.collection('portfolio');
+}
+
+export async function getReportsCollection() {
+  const { db } = await connectToDatabase();
+  return db.collection('reports');
+}
+
+export function isMongoDBConfigured() {
+  return isMongDBConfigured;
+}
+ 

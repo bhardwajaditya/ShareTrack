@@ -3,7 +3,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry } from 'ag-grid-community';
 import { ClientSideRowModelModule, ValidationModule } from 'ag-grid-community';
 import { runAllBacktests } from '../utils/backtest';
-import { fetchIndexStocks } from '../utils/nseIndexes';
+import { fetchIndexStocks, NSE_INDEXES, getAvailableIndexes } from '../utils/nseIndexes';
 
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
 
@@ -15,7 +15,11 @@ export default function BacktestPage() {
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
   const [selectedStrategy, setSelectedStrategy] = useState(null);
-  const [progress, setProgress] = useState({ current: 0, total: 0, symbol: '' });
+  const [progress, setProgress] = useState({ current: 0, total: 0, symbol: '', index: '' });
+  const [selectedIndex, setSelectedIndex] = useState('ALL');
+
+  // Get all available indexes
+  const availableIndexes = useMemo(() => getAvailableIndexes(), []);
 
   const runBacktest = useCallback(async () => {
     setLoading(true);
@@ -23,11 +27,30 @@ export default function BacktestPage() {
     setResults(null);
 
     try {
-      // Fetch NIFTY 50 stocks
-      const stocks = await fetchIndexStocks('NIFTY_50');
-      setProgress({ current: 0, total: stocks.length, symbol: '' });
+      // Determine which indexes to run
+      const indexesToRun = selectedIndex === 'ALL' 
+        ? availableIndexes 
+        : [NSE_INDEXES[selectedIndex]];
 
-      // Aggregate results across all stocks
+      // Collect all stocks from selected indexes (dedupe by symbol)
+      const allStocksMap = new Map();
+      for (const index of indexesToRun) {
+        setProgress({ current: 0, total: 0, symbol: 'Fetching...', index: index.name });
+        try {
+          const stocks = await fetchIndexStocks(index.id);
+          stocks.forEach(stock => {
+            if (!allStocksMap.has(stock.symbol)) {
+              allStocksMap.set(stock.symbol, { ...stock, index: index.name });
+            }
+          });
+        } catch (err) {
+          console.error(`Error fetching stocks for ${index.name}:`, err);
+        }
+      }
+      const stocks = Array.from(allStocksMap.values());
+      setProgress({ current: 0, total: stocks.length, symbol: '', index: 'Processing' });
+
+      // Aggregate results for all 4 strategies
       const aggregatedResults = {
         strategies: [],
         benchmark: { totalPnL: 0, percentageReturn: 0 },
@@ -35,14 +58,10 @@ export default function BacktestPage() {
       };
 
       const strategyTotals = {
-        'PVB (Price Volume Breakout)': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'VSA (No Supply Pullback)': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'Donchian Channel': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'RSI + Supertrend': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'MA Crossover (Golden/Death)': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'MACD Crossover': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'Bollinger Bands': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'Stochastic Oscillator': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 }
+        'Trend-Pullback': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Connors RSI-2': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Turtle Soup': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Opening Range': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 }
       };
 
       let benchmarkTotal = 0;
@@ -51,7 +70,7 @@ export default function BacktestPage() {
       // Process each stock
       for (let i = 0; i < stocks.length; i++) {
         const stock = stocks[i];
-        setProgress({ current: i + 1, total: stocks.length, symbol: stock.symbol });
+        setProgress({ current: i + 1, total: stocks.length, symbol: stock.symbol, index: 'Processing' });
 
         try {
           // Fetch 1 year of data
@@ -65,7 +84,7 @@ export default function BacktestPage() {
           const stockBacktest = runAllBacktests(data, 100000);
           validStocks++;
 
-          // Aggregate strategy results
+          // Aggregate strategy results (now single strategy)
           stockBacktest.strategies.forEach(stratResult => {
             const totals = strategyTotals[stratResult.strategyName];
             if (totals) {
@@ -81,18 +100,33 @@ export default function BacktestPage() {
 
           benchmarkTotal += stockBacktest.benchmark.percentageReturn;
 
-          // Store individual stock results
+          // Store individual stock results for all 4 strategies
           aggregatedResults.stockResults.push({
             symbol: stock.symbol,
             name: stock.name,
             dataPoints: data.length,
-            ...Object.fromEntries(
-              stockBacktest.strategies.map(s => [
-                s.strategyName.split(' ')[0].toLowerCase(),
-                { pnl: s.totalPnL, trades: s.totalTrades, winRate: s.winRate }
-              ])
-            ),
-            benchmarkReturn: stockBacktest.benchmark.percentageReturn
+            trendPullback: { 
+              pnl: stockBacktest.strategies[0]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[0]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[0]?.winRate || 0 
+            },
+            connorsRSI: { 
+              pnl: stockBacktest.strategies[1]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[1]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[1]?.winRate || 0 
+            },
+            turtleSoup: { 
+              pnl: stockBacktest.strategies[2]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[2]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[2]?.winRate || 0 
+            },
+            openingRange: { 
+              pnl: stockBacktest.strategies[3]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[3]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[3]?.winRate || 0 
+            },
+            benchmarkReturn: stockBacktest.benchmark.percentageReturn,
+            buyHoldProfit: stockBacktest.benchmark.totalPnL || (100000 * stockBacktest.benchmark.percentageReturn / 100)
           });
 
         } catch (err) {
@@ -121,19 +155,19 @@ export default function BacktestPage() {
         stocksAnalyzed: validStocks
       };
 
-      // Find best/worst strategies
+      // Find best/worst strategies from all 4
       aggregatedResults.summary = {
-        bestStrategy: aggregatedResults.strategies.reduce((best, curr) => 
-          curr.percentageReturn > best.percentageReturn ? curr : best
+        bestStrategy: aggregatedResults.strategies.reduce((best, current) => 
+          current.percentageReturn > best.percentageReturn ? current : best
         ),
-        worstStrategy: aggregatedResults.strategies.reduce((worst, curr) => 
-          curr.percentageReturn < worst.percentageReturn ? curr : worst
+        worstStrategy: aggregatedResults.strategies.reduce((worst, current) => 
+          current.percentageReturn < worst.percentageReturn ? current : worst
         ),
-        mostFalsePositives: aggregatedResults.strategies.reduce((most, curr) => 
-          curr.falsePositives > most.falsePositives ? curr : most
+        mostFalsePositives: aggregatedResults.strategies.reduce((most, current) => 
+          current.falsePositives > most.falsePositives ? current : most
         ),
-        mostFalseNegatives: aggregatedResults.strategies.reduce((most, curr) => 
-          curr.falseNegatives > most.falseNegatives ? curr : most
+        mostFalseNegatives: aggregatedResults.strategies.reduce((most, current) => 
+          current.falseNegatives > most.falseNegatives ? current : most
         )
       };
 
@@ -145,7 +179,7 @@ export default function BacktestPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedIndex, availableIndexes]);
 
   // Strategy summary columns
   const strategyColumnDefs = useMemo(() => [
@@ -177,55 +211,55 @@ export default function BacktestPage() {
       field: 'falsePositives', 
       headerName: 'False +ve', 
       width: 100,
-      cellStyle: params => ({ backgroundColor: params.value > 50 ? '#fee2e2' : 'transparent' })
+      cellStyle: params => ({ backgroundColor: params.value > 50 ? 'rgba(239, 68, 68, 0.2)' : 'transparent', color: params.value > 50 ? '#f87171' : 'inherit' })
     },
     { 
       field: 'falseNegatives', 
       headerName: 'False -ve', 
       width: 100,
-      cellStyle: params => ({ backgroundColor: params.value > 100 ? '#fef3c7' : 'transparent' })
+      cellStyle: params => ({ backgroundColor: params.value > 100 ? 'rgba(251, 191, 36, 0.2)' : 'transparent', color: params.value > 100 ? '#fbbf24' : 'inherit' })
     },
     { field: 'stocksAnalyzed', headerName: 'Stocks', width: 80 }
   ], []);
 
-  // Individual stock results columns
+  // Individual stock results columns - All 4 Strategies
   const stockColumnDefs = useMemo(() => [
     { field: 'symbol', headerName: 'Symbol', width: 100, pinned: 'left' },
-    { field: 'name', headerName: 'Name', width: 180 },
-    { field: 'dataPoints', headerName: 'Days', width: 70 },
+    { field: 'name', headerName: 'Name', width: 150 },
+    { field: 'dataPoints', headerName: 'Days', width: 60 },
     { 
       field: 'benchmarkReturn', 
-      headerName: 'Buy & Hold %', 
-      width: 120,
-      valueFormatter: params => `${params.value?.toFixed(2) || 0}%`,
+      headerName: 'B&H %', 
+      width: 80,
+      valueFormatter: params => `${params.value?.toFixed(1) || 0}%`,
       cellStyle: params => params.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' }
     },
     { 
-      headerName: 'PVB', 
+      headerName: '1️⃣ Trend-Pullback', 
       children: [
-        { field: 'pvb.pnl', headerName: 'P&L', width: 100, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}` },
-        { field: 'pvb.trades', headerName: 'Trades', width: 70 }
+        { field: 'trendPullback.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+        { field: 'trendPullback.trades', headerName: 'Trd', width: 50 }
       ]
     },
     { 
-      headerName: 'VSA', 
+      headerName: '2️⃣ Connors RSI', 
       children: [
-        { field: 'vsa.pnl', headerName: 'P&L', width: 100, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}` },
-        { field: 'vsa.trades', headerName: 'Trades', width: 70 }
+        { field: 'connorsRSI.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+        { field: 'connorsRSI.trades', headerName: 'Trd', width: 50 }
       ]
     },
     { 
-      headerName: 'Donchian', 
+      headerName: '3️⃣ Turtle Soup', 
       children: [
-        { field: 'donchian.pnl', headerName: 'P&L', width: 100, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}` },
-        { field: 'donchian.trades', headerName: 'Trades', width: 70 }
+        { field: 'turtleSoup.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+        { field: 'turtleSoup.trades', headerName: 'Trd', width: 50 }
       ]
     },
     { 
-      headerName: 'RSI+ST', 
+      headerName: '4️⃣ Opening Range', 
       children: [
-        { field: 'rsi.pnl', headerName: 'P&L', width: 100, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}` },
-        { field: 'rsi.trades', headerName: 'Trades', width: 70 }
+        { field: 'openingRange.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+        { field: 'openingRange.trades', headerName: 'Trd', width: 50 }
       ]
     }
   ], []);
@@ -236,11 +270,46 @@ export default function BacktestPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            📊 Strategy Backtester
+            📊 4-Strategy Backtester
           </h1>
           <p className="mt-2 text-gray-400">
-            Backtest all 8 trading strategies on NIFTY 50 stocks with 1 year historical data
+            Backtest 4 Strategies on {selectedIndex === 'ALL' ? 'all available indexes' : NSE_INDEXES[selectedIndex]?.name || selectedIndex} with 1 year historical data
           </p>
+        </div>
+
+        {/* Index Selector */}
+        <div className="flex flex-wrap justify-center gap-4 mb-8">
+          <div className="flex items-center gap-3">
+            <label className="text-gray-300 font-medium">Select Index:</label>
+            <select
+              value={selectedIndex}
+              onChange={(e) => setSelectedIndex(e.target.value)}
+              disabled={loading}
+              className="bg-gray-800 border border-gray-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="ALL">🌐 All Available Indexes</option>
+              <optgroup label="Major Indices">
+                {availableIndexes.filter(i => i.category === 'Major Indices').map(index => (
+                  <option key={index.id} value={index.id}>{index.name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Market Cap Indices">
+                {availableIndexes.filter(i => i.category === 'Market Cap Indices').map(index => (
+                  <option key={index.id} value={index.id}>{index.name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Sectoral Indices">
+                {availableIndexes.filter(i => i.category === 'Sectoral Indices').map(index => (
+                  <option key={index.id} value={index.id}>{index.name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Thematic Indices">
+                {availableIndexes.filter(i => i.category === 'Thematic Indices').map(index => (
+                  <option key={index.id} value={index.id}>{index.name}</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
         </div>
 
         {/* Run Button */}
@@ -260,10 +329,18 @@ export default function BacktestPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                 </svg>
-                Processing {progress.symbol} ({progress.current}/{progress.total})
+                {progress.index !== 'Processing' 
+                  ? `Fetching ${progress.index}...`
+                  : `Processing ${progress.symbol} (${progress.current}/${progress.total})`
+                }
               </span>
-            ) : '🚀 Run Backtest on NIFTY 50'}
+            ) : `🚀 Run Backtest on ${selectedIndex === 'ALL' ? 'All Indexes' : NSE_INDEXES[selectedIndex]?.name || selectedIndex}`}
           </button>
+          {selectedIndex === 'ALL' && !loading && (
+            <p className="mt-2 text-gray-500 text-sm">
+              ⚠️ Running on all indexes may take several minutes depending on the number of stocks
+            </p>
+          )}
         </div>
 
         {error && (
@@ -369,71 +446,46 @@ export default function BacktestPage() {
           </>
         )}
 
-        {/* Strategy Explanation */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-blue-400 mb-2">1️⃣ PVB</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• Price above 50 EMA</li>
-              <li>• Breaks 20-day resistance</li>
-              <li>• Volume ≥ 1.5x average</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-purple-400 mb-2">2️⃣ VSA</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• Stock in uptrend</li>
-              <li>• Narrow range, low volume candle</li>
-              <li>• Price near 20 EMA support</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-green-400 mb-2">3️⃣ Donchian</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• BUY: New 20-day high</li>
-              <li>• SELL: Break below band</li>
-              <li>• Turtle Trading rules</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-orange-400 mb-2">4️⃣ RSI+ST</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• BUY: ST green + RSI ≥ 60</li>
-              <li>• SELL: ST red OR RSI &lt; 40</li>
-              <li>• Momentum + Trend</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-cyan-400 mb-2">5️⃣ MA Cross</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• Golden Cross: 50 EMA &gt; 200 EMA</li>
-              <li>• Death Cross: 50 EMA &lt; 200 EMA</li>
-              <li>• Classic trend following</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-pink-400 mb-2">6️⃣ MACD</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• BUY: MACD crosses signal</li>
-              <li>• (12, 26, 9) settings</li>
-              <li>• Momentum + trend</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-indigo-400 mb-2">7️⃣ Bollinger</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• BUY: Price at lower band</li>
-              <li>• SELL: Price at upper band</li>
-              <li>• Mean reversion strategy</li>
-            </ul>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-            <h3 className="text-base font-bold text-teal-400 mb-2">8️⃣ Stochastic</h3>
-            <ul className="text-gray-400 text-xs space-y-1">
-              <li>• BUY: Oversold (&lt;20) + cross</li>
-              <li>• SELL: Overbought (&gt;80) + cross</li>
-              <li>• %K/%D momentum</li>
-            </ul>
+        {/* 4 Strategy Explanations */}
+        <div className="mt-8">
+          <h2 className="text-xl font-bold text-white mb-4">📐 4 Trading Strategies</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gradient-to-br from-blue-900/50 to-blue-800/30 border border-blue-500/50 rounded-xl p-5">
+              <h3 className="text-base font-bold text-blue-400 mb-2">1️⃣ Trend-Pullback</h3>
+              <ul className="text-gray-400 text-xs space-y-1">
+                <li>• Price &gt; 50 EMA (uptrend)</li>
+                <li>• Stochastic + BB setup</li>
+                <li>• MACD trigger</li>
+                <li>• Volume confirmation</li>
+              </ul>
+            </div>
+            <div className="bg-gradient-to-br from-teal-900/50 to-teal-800/30 border border-teal-500/50 rounded-xl p-5">
+              <h3 className="text-base font-bold text-teal-400 mb-2">2️⃣ Connors RSI-2</h3>
+              <ul className="text-gray-400 text-xs space-y-1">
+                <li>• Price &gt; 200 SMA (uptrend)</li>
+                <li>• RSI(2) &lt; 10 = BUY</li>
+                <li>• Exit: Close &gt; 5 SMA</li>
+                <li>• ~75-80% win rate</li>
+              </ul>
+            </div>
+            <div className="bg-gradient-to-br from-orange-900/50 to-orange-800/30 border border-orange-500/50 rounded-xl p-5">
+              <h3 className="text-base font-bold text-orange-400 mb-2">3️⃣ Turtle Soup</h3>
+              <ul className="text-gray-400 text-xs space-y-1">
+                <li>• Buy: 20-day high breakout</li>
+                <li>• Pyramid: +1 ATR</li>
+                <li>• Exit: 10-day low</li>
+                <li>• Trend following</li>
+              </ul>
+            </div>
+            <div className="bg-gradient-to-br from-green-900/50 to-green-800/30 border border-green-500/50 rounded-xl p-5">
+              <h3 className="text-base font-bold text-green-400 mb-2">4️⃣ Opening Range</h3>
+              <ul className="text-gray-400 text-xs space-y-1">
+                <li>• Break 5-day range high</li>
+                <li>• Above VWAP</li>
+                <li>• Volume spike &gt;1.3x</li>
+                <li>• Target: 2x range</li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -445,14 +497,7 @@ export default function BacktestPage() {
         </div>
       </div>
 
-      <style jsx global>{`
-        .ag-theme-alpine-dark {
-          --ag-background-color: transparent;
-          --ag-header-background-color: rgba(31, 41, 55, 0.8);
-          --ag-odd-row-background-color: rgba(31, 41, 55, 0.3);
-          --ag-row-hover-color: rgba(59, 130, 246, 0.2);
-        }
-      `}</style>
+
     </div>
   );
 }
