@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '🏠' },
-  { href: '/', label: 'Market Analysis', icon: '📊' },
+  { href: '/', label: 'Dashboard', icon: '🏠' },
+  { href: '/analysis', label: 'Market Analysis', icon: '📊' },
   { href: '/portfolio', label: 'Portfolio', icon: '💼' },
   { href: '/backtest', label: 'Backtest', icon: '📈' },
   { href: '/reports', label: 'Reports', icon: '📋' },

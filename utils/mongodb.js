@@ -42,6 +42,14 @@ export async function getReportsCollection() {
   return db.collection('reports');
 }
 
+export async function getStockHistoricalDataCollection() {
+  const { db } = await connectToDatabase();
+  const collection = db.collection('stockHistoricalData');
+  // Ensure compound index exists for efficient lookups
+  await collection.createIndex({ symbol: 1, date: 1 }, { unique: true, background: true });
+  return collection;
+}
+
 export function isMongoDBConfigured() {
   return isMongDBConfigured;
 }
