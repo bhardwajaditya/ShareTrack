@@ -125,10 +125,40 @@ const saveToCache = async (collection, records) => {
   console.log(`Cached ${result.upsertedCount} new records, updated ${result.modifiedCount} existing records`);
 };
 
+// Check if market is still open (before 3:30 PM IST)
+const isMarketOpen = () => {
+  const now = new Date();
+  // Convert to IST (UTC+5:30)
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + (now.getTimezoneOffset() * 60 * 1000) + istOffset);
+  
+  const hours = istTime.getHours();
+  const minutes = istTime.getMinutes();
+  
+  // Market closes at 3:30 PM IST (15:30)
+  const marketCloseHour = 15;
+  const marketCloseMinute = 30;
+  
+  if (hours < marketCloseHour) return true;
+  if (hours === marketCloseHour && minutes < marketCloseMinute) return true;
+  return false;
+};
+
 // Fetch stock data for a single symbol with caching
 const fetchStockDataWithCache = async (collection, symbol, requestedStartDate, requestedEndDate) => {
-  // Get cached data for the requested range
-  const cachedData = await getCachedData(collection, symbol, requestedStartDate, requestedEndDate);
+  const today = new Date().toISOString().split('T')[0];
+  const marketOpen = isMarketOpen();
+  
+  // Determine the date range to fetch from cache
+  // If market is open, exclude today from cache lookup - we'll fetch it fresh
+  const cacheEndDate = (marketOpen && requestedEndDate >= today) ? 
+    new Date(new Date(today).getTime() - 86400000).toISOString().split('T')[0] : // Yesterday
+    requestedEndDate;
+  
+  // Get cached data for the requested range (excluding today if market is open)
+  const cachedData = cacheEndDate >= requestedStartDate ? 
+    await getCachedData(collection, symbol, requestedStartDate, cacheEndDate) :
+    [];
   
   // If we have no cached data, fetch the entire range
   if (cachedData.length === 0) {
@@ -162,7 +192,7 @@ const fetchStockDataWithCache = async (collection, symbol, requestedStartDate, r
   }
   
   // Check if we need data after the latest cached date
-  const today = new Date().toISOString().split('T')[0];
+  // 'today' is already defined at the start of this function
   const effectiveEndDate = requestedEndDate > today ? today : requestedEndDate;
   
   if (latestCached < effectiveEndDate) {

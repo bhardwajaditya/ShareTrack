@@ -138,7 +138,7 @@ export const fetchHistoricalData = async (symbol, period = '1y') => {
   }
 };
 
-import { sma, ema, rsi, atr, macd, bollingerbands, stochastic } from 'technicalindicators';
+import { sma, ema, rsi, atr, macd, bollingerbands, stochastic, adx, mfi } from 'technicalindicators';
 
 // ============================================================
 // TREND-PULLBACK WEIGHTED STRATEGY SYSTEM
@@ -164,7 +164,7 @@ export const analyzeWeightedStrategy = (data, index = null) => {
 
   // Support backtest mode: if index provided, slice data to that point
   const workingData = index !== null ? data.slice(0, index + 1) : data;
-  if (workingData.length < 50) return insufficientResult;
+  if (workingData.length < 50) return insufficientResult; 
 
   const closes = workingData.map(d => d.close);
   const highs = workingData.map(d => d.high);
@@ -178,11 +178,11 @@ export const analyzeWeightedStrategy = (data, index = null) => {
   // Price > 50 EMA (20 pts) + Volume > Average (20 pts)
   // ============================================================
   const ema50Values = ema({ period: 50, values: closes });
-  const lastEma50 = ema50Values[ema50Values.length - 1];
+  const lastEma50 = ema50Values.length > 0 ? ema50Values[ema50Values.length - 1] : lastClose;
   const priceAboveEma50 = lastClose > lastEma50;
 
   const avgVolume20 = sma({ period: 20, values: volumes });
-  const lastAvgVolume20 = avgVolume20[avgVolume20.length - 1];
+  const lastAvgVolume20 = avgVolume20.length > 0 ? avgVolume20[avgVolume20.length - 1] : volumes[volumes.length - 1];
   const lastVolume = volumes[volumes.length - 1];
   const volumeAboveAvg = lastVolume > lastAvgVolume20;
 
@@ -191,16 +191,16 @@ export const analyzeWeightedStrategy = (data, index = null) => {
   
   if (priceAboveEma50) {
     phase1Score += 20;
-    phase1Reasons.push(`Price ₹${lastClose.toFixed(0)} > 50 EMA ₹${lastEma50.toFixed(0)}`);
+    phase1Reasons.push(`Price ₹${lastClose.toFixed(0)} > 50 EMA ₹${lastEma50?.toFixed(0) || 0}`);
   } else {
-    phase1Reasons.push(`Price below 50 EMA (₹${lastEma50.toFixed(0)})`);
+    phase1Reasons.push(`Price below 50 EMA (₹${lastEma50?.toFixed(0) || 0})`);
   }
   
   if (volumeAboveAvg) {
     phase1Score += 20;
-    phase1Reasons.push(`Volume ${(lastVolume/lastAvgVolume20).toFixed(1)}x avg`);
+    phase1Reasons.push(`Volume ${lastAvgVolume20 > 0 ? (lastVolume/lastAvgVolume20).toFixed(1) : '1.0'}x avg`);
   } else {
-    phase1Reasons.push(`Low volume (${(lastVolume/lastAvgVolume20).toFixed(1)}x)`);
+    phase1Reasons.push(`Low volume (${lastAvgVolume20 > 0 ? (lastVolume/lastAvgVolume20).toFixed(1) : '0.0'}x)`);
   }
 
   const phase1Passed = priceAboveEma50 && volumeAboveAvg;
@@ -212,7 +212,7 @@ export const analyzeWeightedStrategy = (data, index = null) => {
     priceAboveEma: priceAboveEma50,
     volumeAboveAvg: volumeAboveAvg,
     ema50: lastEma50?.toFixed(2),
-    volumeRatio: (lastVolume/lastAvgVolume20).toFixed(2)
+    volumeRatio: lastAvgVolume20 > 0 ? (lastVolume/lastAvgVolume20).toFixed(2) : '1.00'
   };
 
   // ============================================================
@@ -418,106 +418,159 @@ export const analyzeWeightedStrategy = (data, index = null) => {
 };
 
 // ============================================================
-// STRATEGY 2: CONNORS RSI-2 (Larry Connors - Mean Reversion)
-// Buy deep oversold dips in uptrending stocks
+// STRATEGY 2: MFI MOMENTUM TREND
+// Buy pullbacks in uptrends using volume-weighted momentum
+// MFI combines price AND volume for superior signal quality
 // ============================================================
 export const analyzeConnorsRSI = (data, index = null) => {
   const insufficientResult = {
     signal: 'NEUTRAL',
     score: 0,
     reason: 'Insufficient data',
-    aboveSma200: false,
-    rsi2: null,
-    aboveSma5: false
+    aboveEma50: false,
+    emaAligned: false,
+    mfi: null,
+    adx: null,
+    volumeRatio: null
   };
 
-  // Support backtest mode: if index provided, slice data to that point
   const workingData = index !== null ? data.slice(0, index + 1) : data;
-  if (workingData.length < 200) return insufficientResult;
+  if (workingData.length < 50) return insufficientResult;
 
   const closes = workingData.map(d => d.close);
+  const highs = workingData.map(d => d.high);
+  const lows = workingData.map(d => d.low);
+  const volumes = workingData.map(d => d.volume);
   const lastClose = closes[closes.length - 1];
 
-  // 200 SMA - Long-term trend filter
-  const sma200Values = sma({ period: 200, values: closes });
-  const lastSma200 = sma200Values[sma200Values.length - 1];
-  const aboveSma200 = lastClose > lastSma200;
+  // PHASE 1: Trend Filter (40 pts max)
+  const ema50Values = ema({ period: 50, values: closes });
+  const ema20Values = ema({ period: 20, values: closes });
+  const lastEma50 = ema50Values[ema50Values.length - 1];
+  const lastEma20 = ema20Values[ema20Values.length - 1];
 
-  // RSI with period 2 (very short-term oversold detection)
-  const rsi2Values = rsi({ period: 2, values: closes });
-  const lastRsi2 = rsi2Values[rsi2Values.length - 1];
-  const prevRsi2 = rsi2Values[rsi2Values.length - 2];
+  const priceAboveEma50 = lastClose > lastEma50;
+  const emaAligned = lastEma20 > lastEma50;
 
-  // 5 SMA - Exit timing
-  const sma5Values = sma({ period: 5, values: closes });
-  const lastSma5 = sma5Values[sma5Values.length - 1];
-  const aboveSma5 = lastClose > lastSma5;
-
-  // Calculate score and signals
-  let score = 0;
+  let phase1Score = 0;
   let reasons = [];
-  let signal = 'NEUTRAL';
 
-  // Must be in uptrend (above 200 SMA)
-  if (aboveSma200) {
-    score += 30;
-    reasons.push('Above 200 SMA (uptrend)');
-
-    // BUY: RSI(2) < 10 (deeply oversold)
-    if (lastRsi2 < 5) {
-      score += 40;
-      reasons.push(`RSI(2) = ${lastRsi2.toFixed(1)} (extreme oversold)`);
-      signal = 'STRONG BUY';
-    } else if (lastRsi2 < 10) {
-      score += 30;
-      reasons.push(`RSI(2) = ${lastRsi2.toFixed(1)} (oversold)`);
-      signal = 'BUY';
-    } else if (lastRsi2 < 20) {
-      score += 15;
-      reasons.push(`RSI(2) = ${lastRsi2.toFixed(1)} (pullback)`);
-    }
-
-    // EXIT: Price closes above 5 SMA (take profit)
-    if (aboveSma5 && prevRsi2 < 20 && lastRsi2 >= 20) {
-      score += 20;
-      reasons.push('Crossed above 5 SMA (exit signal)');
-      signal = 'SELL';
-    }
-  } else {
-    reasons.push('Below 200 SMA (no trade)');
-    signal = 'NEUTRAL';
+  if (priceAboveEma50) {
+    phase1Score += 25;
+    reasons.push('Above 50 EMA (uptrend)');
+  }
+  if (emaAligned) {
+    phase1Score += 15;
+    reasons.push('20 EMA > 50 EMA (aligned)');
   }
 
-  // Avoid buying if already overbought
-  if (lastRsi2 > 90) {
+  // PHASE 2: MFI Setup (30 pts max)
+  const mfiValues = mfi({
+    high: highs,
+    low: lows,
+    close: closes,
+    volume: volumes,
+    period: 14
+  });
+  const lastMFI = mfiValues[mfiValues.length - 1];
+  const prevMFI = mfiValues[mfiValues.length - 2];
+
+  const mfiPullback = lastMFI < 40;
+  const mfiOversold = lastMFI < 30;
+  const mfiRising = lastMFI > prevMFI;
+  const mfiOverbought = lastMFI > 80;
+
+  let phase2Score = 0;
+  if (mfiPullback) {
+    phase2Score += 20;
+    reasons.push(`MFI = ${lastMFI.toFixed(0)} (pullback zone)`);
+  }
+  if (mfiRising && mfiPullback) {
+    phase2Score += 10;
+    reasons.push('MFI turning up');
+  }
+
+  // PHASE 3: Confirmation (30 pts max)
+  const adxResult = adx({ period: 14, high: highs, low: lows, close: closes });
+  const lastADX = adxResult[adxResult.length - 1]?.adx || 0;
+  const trending = lastADX > 20;
+
+  const avgVolume10 = sma({ period: 10, values: volumes });
+  const lastAvgVolume = avgVolume10[avgVolume10.length - 1];
+  const lastVolume = volumes[volumes.length - 1];
+  const volumeRatio = lastAvgVolume > 0 ? lastVolume / lastAvgVolume : 0;
+  const volumeSpike = volumeRatio > 1.3;
+
+  let phase3Score = 0;
+  if (trending) {
+    phase3Score += 15;
+    reasons.push(`ADX = ${lastADX.toFixed(0)} (trending)`);
+  }
+  if (volumeSpike) {
+    phase3Score += 15;
+    reasons.push(`Volume ${volumeRatio.toFixed(1)}x avg`);
+  }
+
+  // Calculate total score
+  let totalScore = phase1Score + phase2Score + phase3Score;
+
+  // CRITICAL: Cap score if trend filter fails
+  if (!priceAboveEma50) {
+    totalScore = Math.min(totalScore, 20);
+    reasons = ['Below 50 EMA (no trade)'];
+  }
+
+  // Signal determination
+  let signal = 'NEUTRAL';
+
+  if (priceAboveEma50) {
+    if (totalScore >= 80 && mfiOversold) {
+      signal = 'STRONG BUY';
+    } else if (totalScore >= 60) {
+      signal = 'BUY';
+    }
+  }
+
+  // Exit conditions
+  if (mfiOverbought) {
     signal = 'SELL';
-    reasons = ['RSI(2) overbought > 90'];
-    score = 20;
+    reasons = [`MFI = ${lastMFI.toFixed(0)} (overbought - take profit)`];
+    totalScore = 25;
+  }
+
+  if (lastClose < lastEma20 && !mfiRising && lastMFI > 50) {
+    signal = 'STRONG SELL';
+    reasons = ['Below 20 EMA + MFI falling (exit)'];
+    totalScore = 15;
   }
 
   return {
     signal,
-    score,
+    score: totalScore,
     reason: reasons.join(', ') || 'No setup',
-    aboveSma200,
-    rsi2: lastRsi2?.toFixed(1),
-    aboveSma5,
-    sma200: lastSma200?.toFixed(2)
+    aboveEma50: priceAboveEma50,
+    emaAligned,
+    mfi: lastMFI?.toFixed(1),
+    adx: lastADX?.toFixed(1),
+    volumeRatio: volumeRatio?.toFixed(2)
   };
 };
 
 // ============================================================
-// STRATEGY 3: TURTLE SOUP / DONCHIAN BREAKOUT (Richard Dennis)
-// Buy breakout above 20-day high, exit at 10-day low
+// STRATEGY 3: MOMENTUM BREAKOUT (Replaces Turtle Soup)
+// Buy momentum breakouts with trend and volume confirmation
+// Higher win rate than classic Turtle for Indian equities
 // ============================================================
-export const analyzeTurtleSoup = (data, index = null) => {
+export const analyzeMomentumBreakout = (data, index = null) => {
   const insufficientResult = {
     signal: 'NEUTRAL',
     score: 0,
     reason: 'Insufficient data',
-    breakout: false,
-    newHigh20: false,
-    above10Low: true
+    aboveEma20: false,
+    aboveEma50: false,
+    rsi14InRange: false,
+    volumeConfirm: false,
+    strongTrend: false
   };
 
   // Support backtest mode: if index provided, slice data to that point
@@ -527,91 +580,152 @@ export const analyzeTurtleSoup = (data, index = null) => {
   const closes = workingData.map(d => d.close);
   const highs = workingData.map(d => d.high);
   const lows = workingData.map(d => d.low);
+  const volumes = workingData.map(d => d.volume);
   const lastClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
+  const lastVolume = volumes[volumes.length - 1];
 
-  // Donchian Channel - 20 period for entry
-  const last20Highs = highs.slice(-21, -1); // Exclude today
-  const donchian20High = Math.max(...last20Highs);
-  
-  // Donchian Channel - 10 period for exit
-  const last10Lows = lows.slice(-11, -1);
-  const donchian10Low = Math.min(...last10Lows);
+  // Trend filters - 20 EMA and 50 EMA
+  const ema20Values = ema({ period: 20, values: closes });
+  const lastEma20 = ema20Values[ema20Values.length - 1];
+  const aboveEma20 = lastClose > lastEma20;
 
-  // ATR for stop loss calculation
+  const ema50Values = ema({ period: 50, values: closes });
+  const lastEma50 = ema50Values[ema50Values.length - 1];
+  const aboveEma50 = lastClose > lastEma50;
+
+  // RSI(14) in momentum zone (50-70 = bullish momentum, not overbought)
+  const rsi14Values = rsi({ period: 14, values: closes });
+  const lastRsi14 = rsi14Values[rsi14Values.length - 1];
+  const rsi14InRange = lastRsi14 >= 50 && lastRsi14 <= 70;
+  const rsiOverbought = lastRsi14 > 80;
+
+  // ADX for trend strength
+  const adxResult = adx({ period: 14, high: highs, low: lows, close: closes });
+  const lastADX = adxResult[adxResult.length - 1]?.adx || 0;
+  const strongTrend = lastADX > 25;
+
+  // Volume confirmation (1.5x average)
+  const avgVolume10 = sma({ period: 10, values: volumes });
+  const lastAvgVolume = avgVolume10[avgVolume10.length - 1];
+  const volumeConfirm = lastVolume > lastAvgVolume * 1.5;
+
+  // 10-day high breakout
+  const last10Highs = highs.slice(-11, -1);
+  const high10Day = Math.max(...last10Highs);
+  const breakout10Day = lastClose > high10Day && prevClose <= high10Day;
+  const aboveHigh10Day = lastClose > high10Day;
+
+  // ATR for trailing stop
   const atrValues = atr({ period: 14, high: highs, low: lows, close: closes });
   const lastAtr = atrValues[atrValues.length - 1];
-
-  // Entry: Price breaks above 20-day high
-  const brokeOut = lastClose > donchian20High;
-  const freshBreakout = lastClose > donchian20High && prevClose <= donchian20High;
-
-  // Exit: Price touches 10-day low
-  const touchedExit = lastClose <= donchian10Low;
-
-  // Trend strength: How far above the 20-day low
-  const last20Lows = lows.slice(-21, -1);
-  const donchian20Low = Math.min(...last20Lows);
-  const range = donchian20High - donchian20Low;
-  const positionInRange = range > 0 ? (lastClose - donchian20Low) / range : 0.5;
 
   // Calculate score
   let score = 0;
   let reasons = [];
   let signal = 'NEUTRAL';
 
-  if (freshBreakout) {
-    score += 50;
-    reasons.push(`Breakout above 20-day high ₹${donchian20High.toFixed(0)}`);
+  // Primary trend filters
+  if (aboveEma20 && aboveEma50) {
+    score += 20;
+    reasons.push('Above 20/50 EMA');
+  } else if (aboveEma20) {
+    score += 10;
+    reasons.push('Above 20 EMA');
+  }
+
+  // RSI momentum zone
+  if (rsi14InRange) {
+    score += 15;
+    reasons.push(`RSI(14) ${lastRsi14.toFixed(0)} (momentum)`);
+  } else if (lastRsi14 >= 40 && lastRsi14 < 50) {
+    score += 5;
+    reasons.push(`RSI(14) ${lastRsi14.toFixed(0)} (recovering)`);
+  }
+
+  // ADX trend strength
+  if (strongTrend) {
+    score += 20;
+    reasons.push(`ADX ${lastADX.toFixed(0)} (strong trend)`);
+  } else if (lastADX > 20) {
+    score += 10;
+    reasons.push(`ADX ${lastADX.toFixed(0)} (trending)`);
+  }
+
+  // Breakout detection
+  if (breakout10Day) {
+    score += 25;
+    reasons.push(`Broke 10-day high \u20b9${high10Day.toFixed(0)}`);
+  } else if (aboveHigh10Day) {
+    score += 10;
+    reasons.push('Holding above 10-day high');
+  }
+
+  // Volume confirmation
+  if (volumeConfirm && (breakout10Day || aboveHigh10Day)) {
+    score += 20;
+    reasons.push(`Volume ${(lastVolume/lastAvgVolume).toFixed(1)}x`);
+  }
+
+  // Determine signal
+  if (score >= 70 && (breakout10Day || (aboveHigh10Day && volumeConfirm))) {
     signal = 'STRONG BUY';
-  } else if (brokeOut) {
-    score += 30;
-    reasons.push(`Above 20-day high`);
+  } else if (score >= 50 && aboveEma20) {
     signal = 'BUY';
   }
 
-  // Add points for strong position
-  if (positionInRange > 0.8) {
-    score += 20;
-    reasons.push('Near top of range');
-  } else if (positionInRange > 0.5) {
-    score += 10;
-    reasons.push('Upper half of range');
-  }
+  // EXIT CONDITIONS
+  // 1. Price below 10 EMA
+  const ema10Values = ema({ period: 10, values: closes });
+  const lastEma10 = ema10Values[ema10Values.length - 1];
+  const belowEma10 = lastClose < lastEma10 && prevClose >= lastEma10;
 
-  // Pyramiding opportunity: If trending strongly
-  if (brokeOut && lastAtr > 0) {
-    const atrRatio = (lastClose - donchian20High) / lastAtr;
-    if (atrRatio >= 1) {
-      score += 20;
-      reasons.push(`+${atrRatio.toFixed(1)} ATR (pyramid)` );
-    }
-  }
-
-  // EXIT signal
-  if (touchedExit) {
+  // 2. RSI overbought
+  if (rsiOverbought) {
     signal = 'SELL';
-    reasons = [`Hit 10-day low ₹${donchian10Low.toFixed(0)} (exit)`];
+    reasons = [`RSI(14) ${lastRsi14.toFixed(0)} (overbought)`];
+    score = 20;
+  }
+
+  // 3. Breakdown signal
+  if (belowEma10 && !aboveEma50) {
+    signal = 'SELL';
+    reasons = ['Closed below 10 EMA, losing trend'];
     score = 15;
+  }
+
+  // Strong sell on major breakdown
+  if (lastClose < lastEma50 && prevClose >= lastEma50) {
+    signal = 'STRONG SELL';
+    reasons = ['Broke below 50 EMA (trend reversal)'];
+    score = 10;
   }
 
   return {
     signal,
     score,
-    reason: reasons.join(', ') || 'No breakout',
-    breakout: brokeOut,
-    newHigh20: freshBreakout,
-    above10Low: !touchedExit,
-    donchian20High: donchian20High?.toFixed(2),
-    donchian10Low: donchian10Low?.toFixed(2),
-    atr: lastAtr?.toFixed(2)
+    reason: reasons.join(', ') || 'No momentum setup',
+    aboveEma20,
+    aboveEma50,
+    rsi14: lastRsi14?.toFixed(1),
+    rsi14InRange,
+    adx: lastADX?.toFixed(1),
+    strongTrend,
+    volumeConfirm,
+    breakout: breakout10Day || aboveHigh10Day,
+    high10Day: high10Day?.toFixed(2),
+    atr: lastAtr?.toFixed(2),
+    ema10: lastEma10?.toFixed(2)
   };
 };
 
+// Legacy alias for backward compatibility
+export const analyzeTurtleSoup = analyzeMomentumBreakout;
+
 // ============================================================
-// STRATEGY 4: OPENING RANGE BREAKOUT (Toby Crabel)
-// For daily data: Uses first few days of month/week as "range"
-// Adapted for EOD: Use recent consolidation range
+// STRATEGY 4: OPENING RANGE BREAKOUT (IMPROVED)
+// Uses 3-day consolidation range with stop-loss logic
+// Better false breakout filtering for Indian equities
 // ============================================================
 export const analyzeOpeningRange = (data, index = null) => {
   const insufficientResult = {
@@ -620,7 +734,8 @@ export const analyzeOpeningRange = (data, index = null) => {
     reason: 'Insufficient data',
     breakout: false,
     aboveVwap: false,
-    volumeConfirm: false
+    volumeConfirm: false,
+    stopLoss: null
   };
 
   // Support backtest mode: if index provided, slice data to that point
@@ -633,12 +748,19 @@ export const analyzeOpeningRange = (data, index = null) => {
   const volumes = workingData.map(d => d.volume);
   const lastClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
+  const lastVolume = volumes[volumes.length - 1];
 
-  // Define "Opening Range" using last 5 days consolidation
-  const rangeData = workingData.slice(-6, -1); // Last 5 days excluding today
+  // Define "Opening Range" using last 3 days consolidation (tighter than 5 days)
+  const rangeData = workingData.slice(-4, -1); // Last 3 days excluding today
   const rangeHigh = Math.max(...rangeData.map(d => d.high));
   const rangeLow = Math.min(...rangeData.map(d => d.low));
   const rangeWidth = rangeHigh - rangeLow;
+  const rangeMid = (rangeHigh + rangeLow) / 2;
+
+  // Minimum range width filter (avoid too-tight ranges that cause whipsaws)
+  const avgPrice = closes.slice(-10).reduce((a, b) => a + b, 0) / 10;
+  const minRangeWidth = avgPrice * 0.02; // Minimum 2% of price
+  const validRange = rangeWidth >= minRangeWidth;
 
   // Calculate VWAP approximation (typical price * volume weighted)
   const recentData = workingData.slice(-10);
@@ -652,11 +774,10 @@ export const analyzeOpeningRange = (data, index = null) => {
   const vwap = vwapDenominator > 0 ? vwapNumerator / vwapDenominator : lastClose;
   const aboveVwap = lastClose > vwap;
 
-  // Volume confirmation
+  // Volume confirmation (1.5x for stronger confirmation)
   const avgVolume5 = sma({ period: 5, values: volumes });
   const lastAvgVolume = avgVolume5[avgVolume5.length - 1];
-  const lastVolume = volumes[volumes.length - 1];
-  const volumeSpike = lastVolume > lastAvgVolume * 1.3;
+  const volumeSpike = lastVolume > lastAvgVolume * 1.5; // Increased from 1.3x
 
   // Breakout detection
   const brokeHigh = lastClose > rangeHigh && prevClose <= rangeHigh;
@@ -664,54 +785,93 @@ export const analyzeOpeningRange = (data, index = null) => {
   const brokeLow = lastClose < rangeLow && prevClose >= rangeLow;
   const belowRange = lastClose < rangeLow;
 
+  // Stop-loss at range midpoint
+  const stopLoss = rangeMid;
+
   // Calculate score
   let score = 0;
   let reasons = [];
   let signal = 'NEUTRAL';
 
+  // Check for valid range width
+  if (!validRange) {
+    return {
+      signal: 'NEUTRAL',
+      score: 0,
+      reason: `Range too tight (${((rangeWidth/avgPrice)*100).toFixed(1)}%)`,
+      breakout: false,
+      aboveVwap,
+      volumeConfirm: volumeSpike,
+      rangeHigh: rangeHigh?.toFixed(2),
+      rangeLow: rangeLow?.toFixed(2),
+      stopLoss: null,
+      vwap: vwap?.toFixed(2),
+      target: null
+    };
+  }
+
   // Bullish breakout
   if (brokeHigh) {
-    score += 35;
-    reasons.push(`Broke range high ₹${rangeHigh.toFixed(0)}`);
+    score += 30;
+    reasons.push(`Broke 3-day high \u20b9${rangeHigh.toFixed(0)}`);
     
     if (aboveVwap) {
-      score += 20;
+      score += 25;
       reasons.push('Above VWAP');
     }
     
     if (volumeSpike) {
-      score += 25;
+      score += 30;
       reasons.push(`Volume ${(lastVolume/lastAvgVolume).toFixed(1)}x`);
     }
 
-    signal = score >= 60 ? 'BUY' : 'NEUTRAL';
-    if (score >= 80) signal = 'STRONG BUY';
+    if (score >= 70) {
+      signal = 'STRONG BUY';
+    } else if (score >= 50) {
+      signal = 'BUY';
+    }
   } else if (aboveRange && aboveVwap) {
-    score += 30;
+    score += 25;
     reasons.push('Holding above range');
-    if (volumeSpike) score += 15;
-    signal = 'BUY';
+    if (volumeSpike) {
+      score += 20;
+      reasons.push(`Volume confirmation`);
+    }
+    if (score >= 40) signal = 'BUY';
+  }
+
+  // Stop-loss trigger (at range midpoint)
+  if (aboveRange && lastClose < stopLoss && prevClose >= stopLoss) {
+    signal = 'SELL';
+    reasons = [`Hit stop-loss at \u20b9${stopLoss.toFixed(0)} (range midpoint)`];
+    score = 15;
   }
 
   // Bearish breakdown
-  if (brokeLow || belowRange) {
+  if (brokeLow) {
+    signal = 'STRONG SELL';
+    reasons = [`Broke 3-day low \u20b9${rangeLow.toFixed(0)}`];
+    score = 10;
+  } else if (belowRange) {
     signal = 'SELL';
-    reasons = [`Below range low ₹${rangeLow.toFixed(0)}`];
-    score = 20;
+    reasons = [`Below range low \u20b9${rangeLow.toFixed(0)}`];
+    score = 15;
   }
 
-  // Target calculation
-  const target = rangeHigh + (rangeWidth * 2);
+  // Target calculation (1.5x range width instead of 2x for more realistic exits)
+  const target = rangeHigh + (rangeWidth * 1.5);
 
   return {
     signal,
     score,
-    reason: reasons.join(', ') || 'In range',
+    reason: reasons.join(', ') || 'In range (waiting for breakout)',
     breakout: brokeHigh || aboveRange,
     aboveVwap,
     volumeConfirm: volumeSpike,
     rangeHigh: rangeHigh?.toFixed(2),
     rangeLow: rangeLow?.toFixed(2),
+    rangeMid: rangeMid?.toFixed(2),
+    stopLoss: stopLoss?.toFixed(2),
     vwap: vwap?.toFixed(2),
     target: target?.toFixed(2)
   };
@@ -757,7 +917,7 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
           lastPrice: data?.[data.length - 1]?.close || null,
           trendPullback: defaultStrategy,
           connorsRSI: defaultStrategy,
-          turtleSoup: defaultStrategy,
+          momentumBreakout: defaultStrategy,
           openingRange: defaultStrategy,
           overallSignal: 'NEUTRAL',
           overallScore: 0,
@@ -773,14 +933,14 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
       // Run all 4 strategies
       const trendPullbackResult = analyzeWeightedStrategy(data);
       const connorsRSIResult = analyzeConnorsRSI(data);
-      const turtleSoupResult = analyzeTurtleSoup(data);
+      const momentumBreakoutResult = analyzeMomentumBreakout(data);
       const openingRangeResult = analyzeOpeningRange(data);
 
       // Count BUY signals
       const signals = [
         trendPullbackResult.signal,
         connorsRSIResult.signal,
-        turtleSoupResult.signal,
+        momentumBreakoutResult.signal,
         openingRangeResult.signal
       ];
       const buyCount = signals.filter(s => s === 'BUY' || s === 'STRONG BUY').length;
@@ -790,7 +950,7 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
       const overallScore = Math.round(
         (trendPullbackResult.totalScore + 
          connorsRSIResult.score + 
-         turtleSoupResult.score + 
+         momentumBreakoutResult.score + 
          openingRangeResult.score) / 4
       );
 
@@ -813,19 +973,19 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
           confidence: trendPullbackResult.confidence,
           reason: trendPullbackResult.phase1?.reason
         },
-        // Strategy 2: Connors RSI-2
+        // Strategy 2: MFI Momentum Trend
         connorsRSI: {
           signal: connorsRSIResult.signal,
           score: connorsRSIResult.score,
-          rsi2: connorsRSIResult.rsi2,
+          mfi: connorsRSIResult.mfi,
           reason: connorsRSIResult.reason
         },
-        // Strategy 3: Turtle Soup
-        turtleSoup: {
-          signal: turtleSoupResult.signal,
-          score: turtleSoupResult.score,
-          breakout: turtleSoupResult.breakout,
-          reason: turtleSoupResult.reason
+        // Strategy 3: Momentum Breakout
+        momentumBreakout: {
+          signal: momentumBreakoutResult.signal,
+          score: momentumBreakoutResult.score,
+          breakout: momentumBreakoutResult.breakout,
+          reason: momentumBreakoutResult.reason
         },
         // Strategy 4: Opening Range
         openingRange: {

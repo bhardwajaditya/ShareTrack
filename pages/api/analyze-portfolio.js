@@ -89,7 +89,7 @@ function analyzeStock(data) {
     connorsRSI: {
       signal: connorsRSI?.signal || 'NEUTRAL',
       score: connorsRSI?.score || 0,
-      rsi2: connorsRSI?.rsi2 || null,
+      mfi: connorsRSI?.mfi || null,
       reason: connorsRSI?.reason || 'No data'
     },
     turtleSoup: {

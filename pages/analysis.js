@@ -122,23 +122,23 @@ export default function Analysis() {
         { field: 'trendPullback.score', headerName: 'Pts', width: 50 }
       ]
     },
-    // Strategy 2: Connors RSI-2
-    { 
-      headerName: '2️⃣ Connors RSI',
+    // Strategy 2: MFI Momentum Trend
+    {
+      headerName: '2️⃣ MFI Momentum',
       children: [
         { field: 'connorsRSI.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
         { field: 'connorsRSI.score', headerName: 'Pts', width: 50 },
-        { field: 'connorsRSI.rsi2', headerName: 'RSI', width: 50 }
+        { field: 'connorsRSI.mfi', headerName: 'MFI', width: 50 }
       ]
     },
-    // Strategy 3: Turtle Soup
+    // Strategy 3: Momentum Breakout
     { 
-      headerName: '3️⃣ Turtle Soup',
+      headerName: '3️⃣ Momentum Breakout',
       children: [
-        { field: 'turtleSoup.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
-        { field: 'turtleSoup.score', headerName: 'Pts', width: 50 },
+        { field: 'momentumBreakout.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'momentumBreakout.score', headerName: 'Pts', width: 50 },
         { 
-          field: 'turtleSoup.breakout', 
+          field: 'momentumBreakout.breakout', 
           headerName: 'Brk', 
           width: 45,
           valueFormatter: p => p.value ? '🚀' : '-',

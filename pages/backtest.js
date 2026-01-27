@@ -59,8 +59,8 @@ export default function BacktestPage() {
 
       const strategyTotals = {
         'Trend-Pullback': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'Connors RSI-2': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'Turtle Soup': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'MFI Momentum': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Momentum Breakout': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
         'Opening Range': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 }
       };
 
@@ -115,7 +115,7 @@ export default function BacktestPage() {
               trades: stockBacktest.strategies[1]?.totalTrades || 0, 
               winRate: stockBacktest.strategies[1]?.winRate || 0 
             },
-            turtleSoup: { 
+            momentumBreakout: { 
               pnl: stockBacktest.strategies[2]?.totalPnL || 0, 
               trades: stockBacktest.strategies[2]?.totalTrades || 0, 
               winRate: stockBacktest.strategies[2]?.winRate || 0 
@@ -242,17 +242,17 @@ export default function BacktestPage() {
       ]
     },
     { 
-      headerName: '2️⃣ Connors RSI', 
+      headerName: '2️⃣ MFI Momentum', 
       children: [
         { field: 'connorsRSI.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
         { field: 'connorsRSI.trades', headerName: 'Trd', width: 50 }
       ]
     },
     { 
-      headerName: '3️⃣ Turtle Soup', 
+      headerName: '3️⃣ Momentum Breakout', 
       children: [
-        { field: 'turtleSoup.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
-        { field: 'turtleSoup.trades', headerName: 'Trd', width: 50 }
+        { field: 'momentumBreakout.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+        { field: 'momentumBreakout.trades', headerName: 'Trd', width: 50 }
       ]
     },
     { 
@@ -462,21 +462,21 @@ export default function BacktestPage() {
               </ul>
             </div>
             <div className="bg-gradient-to-br from-teal-900/50 to-teal-800/30 border border-teal-500/50 rounded-xl p-5">
-              <h3 className="text-base font-bold text-teal-400 mb-2">2️⃣ Connors RSI-2</h3>
+              <h3 className="text-base font-bold text-teal-400 mb-2">2️⃣ MFI Momentum</h3>
               <ul className="text-gray-400 text-xs space-y-1">
-                <li>• Price &gt; 200 SMA (uptrend)</li>
-                <li>• RSI(2) &lt; 10 = BUY</li>
-                <li>• Exit: Close &gt; 5 SMA</li>
-                <li>• ~75-80% win rate</li>
+                <li>• Price &gt; 50 EMA (uptrend)</li>
+                <li>• MFI(14) &lt; 40 = BUY</li>
+                <li>• ADX &gt; 20 (trending)</li>
+                <li>• Volume &gt; 1.3x avg</li>
               </ul>
             </div>
             <div className="bg-gradient-to-br from-orange-900/50 to-orange-800/30 border border-orange-500/50 rounded-xl p-5">
-              <h3 className="text-base font-bold text-orange-400 mb-2">3️⃣ Turtle Soup</h3>
+              <h3 className="text-base font-bold text-orange-400 mb-2">3️⃣ Momentum Breakout</h3>
               <ul className="text-gray-400 text-xs space-y-1">
-                <li>• Buy: 20-day high breakout</li>
-                <li>• Pyramid: +1 ATR</li>
-                <li>• Exit: 10-day low</li>
-                <li>• Trend following</li>
+                <li>• Above 20/50 EMA (trend)</li>
+                <li>• RSI(14) 50-70 (momentum)</li>
+                <li>• ADX &gt;25 (strong trend)</li>
+                <li>• 10-day high + volume</li>
               </ul>
             </div>
             <div className="bg-gradient-to-br from-green-900/50 to-green-800/30 border border-green-500/50 rounded-xl p-5">

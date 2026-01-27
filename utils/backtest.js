@@ -6,7 +6,7 @@
 import {
   analyzeWeightedStrategy,
   analyzeConnorsRSI,
-  analyzeTurtleSoup,
+  analyzeMomentumBreakout,
   analyzeOpeningRange
 } from './stockData';
 
@@ -169,8 +169,8 @@ export const backtestStrategy = (strategyName, runStrategy, historicalData, init
 export const runAllBacktests = (historicalData, initialCapital = 100000) => {
   const strategies = [
     { name: 'Trend-Pullback', fn: analyzeWeightedStrategy },
-    { name: 'Connors RSI-2', fn: analyzeConnorsRSI },
-    { name: 'Turtle Soup', fn: analyzeTurtleSoup },
+    { name: 'MFI Momentum', fn: analyzeConnorsRSI },
+    { name: 'Momentum Breakout', fn: analyzeMomentumBreakout },
     { name: 'Opening Range', fn: analyzeOpeningRange }
   ];
 
