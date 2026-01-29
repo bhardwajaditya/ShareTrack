@@ -1,5 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Head from 'next/head';
+import { AgGridReact } from 'ag-grid-react';
+import { ModuleRegistry } from 'ag-grid-community';
+import { ClientSideRowModelModule, ValidationModule } from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
+
+// Register modules
+ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
 
 export default function Reports() {
   const [reports, setReports] = useState([]);
@@ -85,6 +93,123 @@ export default function Reports() {
     );
   };
 
+
+
+  const signalCellStyle = (params) => {
+    const value = params.value;
+    if (value === 'BUY') return { backgroundColor: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontWeight: 'bold', textAlign: 'center' };
+    if (value === 'STRONG BUY') return { backgroundColor: 'rgba(34, 197, 94, 0.4)', color: '#22c55e', fontWeight: 'bold', textAlign: 'center' };
+    if (value === 'SELL') return { backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 'bold', textAlign: 'center' };
+    if (value === 'STRONG SELL') return { backgroundColor: 'rgba(239, 68, 68, 0.4)', color: '#ef4444', fontWeight: 'bold', textAlign: 'center' };
+    return { backgroundColor: 'rgba(100, 116, 139, 0.2)', color: '#94a3b8', textAlign: 'center' };
+  };
+
+  const columnDefs = useMemo(() => [
+    { 
+      field: 'symbol', 
+      headerName: 'Symbol', 
+      sortable: true, 
+      filter: true, 
+      pinned: 'left',
+      width: 90
+    },
+    { 
+      field: 'currentPrice', 
+      headerName: 'Price', 
+      sortable: true, 
+      width: 85,
+      valueFormatter: params => params.value ? `₹${params.value.toFixed(2)}` : ''
+    },
+    { 
+      field: 'pnlPercent', 
+      headerName: 'P&L %', 
+      sortable: true, 
+      width: 90,
+      cellStyle: params => {
+        if (params.value > 0) return { color: '#16a34a', fontWeight: '500' };
+        if (params.value < 0) return { color: '#dc2626', fontWeight: '500' };
+        return null;
+      },
+      valueFormatter: params => params.value ? `${parseFloat(params.value) >= 0 ? '+' : ''}${parseFloat(params.value).toFixed(2)}%` : '-'
+    },
+    // Overall Signal (Consensus)
+    { 
+      field: 'analysis.overallSignal', 
+      headerName: '📊 Overall', 
+      sortable: true, 
+      filter: true,
+      width: 100,
+      cellStyle: signalCellStyle
+    },
+    { 
+      field: 'analysis.overallScore', 
+      headerName: 'Score', 
+      sortable: true, 
+      width: 65,
+      cellStyle: params => {
+        const score = params.value || 0;
+        if (score >= 60) return { color: '#22c55e', fontWeight: 'bold' };
+        if (score >= 40) return { color: '#fbbf24' };
+        return { color: '#f87171' };
+      }
+    },
+    { 
+      field: 'analysis.buyCount', 
+      headerName: 'Buys', 
+      sortable: true, 
+      width: 55,
+      cellStyle: params => params.value >= 3 ? { color: '#22c55e', fontWeight: 'bold' } : 
+                           params.value >= 2 ? { color: '#4ade80' } : { color: '#94a3b8' }
+    },
+    // Strategy 1: Trend-Pullback
+    { 
+      headerName: '1️⃣ Trend-Pullback',
+      children: [
+        { field: 'analysis.trendPullback.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'analysis.trendPullback.score', headerName: 'Pts', width: 50 }
+      ]
+    },
+    // Strategy 2: MFI Momentum Trend
+    {
+      headerName: '2️⃣ MFI Momentum',
+      children: [
+        { field: 'analysis.connorsRSI.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'analysis.connorsRSI.score', headerName: 'Pts', width: 50 },
+        { field: 'analysis.connorsRSI.mfi', headerName: 'MFI', width: 50 }
+      ]
+    },
+    // Strategy 3: Momentum Breakout
+    { 
+      headerName: '3️⃣ Momentum Breakout',
+      children: [
+        { field: 'analysis.momentumBreakout.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'analysis.momentumBreakout.score', headerName: 'Pts', width: 50 },
+        { 
+          field: 'analysis.momentumBreakout.breakout', 
+          headerName: 'Brk', 
+          width: 45,
+          valueFormatter: p => p.value ? '🚀' : '-',
+          cellStyle: params => ({ textAlign: 'center' })
+        }
+      ]
+    },
+    // Strategy 4: Opening Range
+    { 
+      headerName: '4️⃣ Opening Range',
+      children: [
+        { field: 'analysis.openingRange.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+        { field: 'analysis.openingRange.score', headerName: 'Pts', width: 50 },
+        { 
+          field: 'analysis.openingRange.breakout', 
+          headerName: 'Brk', 
+          width: 45,
+          valueFormatter: p => p.value ? '📈' : '-',
+          cellStyle: params => ({ textAlign: 'center' })
+        }
+      ]
+    }
+  ], []);
+
   return (
     <>
       <Head>
@@ -116,7 +241,8 @@ export default function Reports() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+
           {/* Reports List */}
           <div className="lg:col-span-1">
             <div className="card">
@@ -253,49 +379,21 @@ export default function Reports() {
                   <div className="card-header">
                     <h3 className="font-semibold text-white">All Holdings Analysis</h3>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-[var(--neutral-700)]">
-                      <thead className="bg-[var(--neutral-900)]">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-[var(--neutral-400)] uppercase">Symbol</th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-[var(--neutral-400)] uppercase">Qty</th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-[var(--neutral-400)] uppercase">Avg Buy</th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-[var(--neutral-400)] uppercase">Current</th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-[var(--neutral-400)] uppercase">P&L %</th>
-                          <th className="px-4 py-3 text-center text-xs font-medium text-[var(--neutral-400)] uppercase">Signal</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--neutral-700)]">
-                        {selectedReport.holdings?.map((holding, idx) => (
-                          <tr key={idx} className="hover:bg-[var(--neutral-700)]/50">
-                            <td className="px-4 py-3 font-medium text-white">{holding.symbol}</td>
-                            <td className="px-4 py-3 text-right text-[var(--neutral-300)]">{holding.quantity}</td>
-                            <td className="px-4 py-3 text-right text-[var(--neutral-300)]">
-                              ₹{holding.avgBuyPrice?.toFixed(2)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-[var(--neutral-300)]">
-                              {holding.currentPrice ? `₹${holding.currentPrice.toFixed(2)}` : '-'}
-                            </td>
-                            <td className={`px-4 py-3 text-right font-semibold ${
-                              parseFloat(holding.pnlPercent) >= 0 ? 'text-[var(--success-400)]' : 'text-[var(--danger-400)]'
-                            }`}>
-                              {holding.pnlPercent ? `${parseFloat(holding.pnlPercent) >= 0 ? '+' : ''}${holding.pnlPercent}%` : '-'}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              {holding.signal ? getSignalBadge(holding.signal) : 
-                                holding.analysis?.overallSignal ? getSignalBadge(holding.analysis.overallSignal) : '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="ag-theme-alpine" style={{ height: 600, width: '100%' }}>
+                    <AgGridReact
+                      rowData={selectedReport.holdings}
+                      columnDefs={columnDefs}
+                      pagination={true}
+                      paginationPageSize={20}
+                      animateRows={true}
+                      onGridReady={(params) => params.api.autoSizeAllColumns()}
+                    />
                   </div>
                 </div>
               </div>
             )}
           </div>
         </div>
-      </div>
-    </>
+        </>
   );
 }

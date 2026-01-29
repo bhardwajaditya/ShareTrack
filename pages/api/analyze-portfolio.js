@@ -92,7 +92,7 @@ function analyzeStock(data) {
       mfi: connorsRSI?.mfi || null,
       reason: connorsRSI?.reason || 'No data'
     },
-    turtleSoup: {
+    momentumBreakout: {
       signal: turtleSoup?.signal || 'NEUTRAL',
       score: turtleSoup?.score || 0,
       breakout: turtleSoup?.breakout || false,

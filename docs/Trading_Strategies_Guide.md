@@ -89,58 +89,66 @@ Bearish score calculated from:
 
 ---
 
-## Strategy 3: Turtle Soup (Donchian Breakout)
+## Strategy 3: Momentum Breakout (Donchian Breakout)
 
 **Style:** Trend-following breakout  
-**Creator:** Richard Dennis (Turtle Trading)  
-**Best For:** Catching strong momentum moves after breakouts
+**Best For:** Catching strong momentum moves with trend and volume confirmation
 
 ### Buy Conditions
 
 | Condition | Signal | Score |
 |-----------|--------|-------|
-| Fresh breakout above 20-day high | STRONG BUY | +50 |
-| Price above 20-day high | BUY | +30 |
-| Position > 80% of range | Bonus | +20 |
-| Price +1 ATR above breakout | Pyramid opportunity | +20 |
+| Broke above 10-day high | STRONG BUY | +25 |
+| Price above 10-day high | BUY | +10 |
+| ADX > 25 (Strong Trend) | Bonus | +20 |
+| Volume > 1.5x average | Confirmation | +20 |
+| Above 20 EMA | Trend Filter | +10 |
+| Above 50 EMA | Trend Filter | +20 |
+| RSI 50-70 | Momentum Zone | +15 |
 
 ### Sell Conditions
 
 | Condition | Signal |
 |-----------|--------|
-| Price touches 10-day low | SELL |
+| Price below 10 EMA | SELL (Losing trend) |
+| RSI > 80 | SELL (Overbought) |
+| Price below 50 EMA | STRONG SELL (Trend Reversal) |
 
 ### Key Indicators
-- **Donchian 20-High:** Entry level (breakout trigger)
-- **Donchian 10-Low:** Exit level (trailing stop)
-- **ATR(14):** Position sizing and pyramiding
+- **10-day High:** Entry level (breakout trigger)
+- **10 EMA:** Early exit signal
+- **50 EMA:** Major trend filter
+- **ADX(14):** Trend strength (>25 is strong)
+- **RSI(14):** Momentum zone (50-70)
 
 ---
 
-## Strategy 4: Opening Range Breakout
+## Strategy 4: Opening Range Breakout (Improved)
 
 **Style:** Range breakout  
-**Creator:** Toby Crabel  
-**Best For:** Capturing volatility expansion after consolidation
+**Best For:** Capturing volatility expansion after 3-day consolidation
 
 ### Buy Conditions
 
 | Condition | Score |
 |-----------|-------|
-| Broke above 5-day range high | +35 |
+| Broke above 3-day range high | +35 |
 | Price above VWAP | +20 |
-| Volume spike > 1.3× average | +25 |
+| Volume spike > 1.5× average | +25 |
 | Holding above range + above VWAP | +30 |
 
-**STRONG BUY:** Score ≥ 80  
+**STRONG BUY:** Score ≥ 80
 **BUY:** Score ≥ 60
 
 ### Sell Conditions
 
 | Condition | Signal |
 |-----------|--------|
-| Broke below 5-day range low | SELL |
+| Broke below 3-day range low | SELL |
 | Price below range | SELL |
+
+### Stop Loss
+Stop loss is placed at the **midpoint** of the 3-day range.
 
 ### Price Target
 ```
@@ -155,8 +163,8 @@ Target = Range High + (2 × Range Width)
 |----------|------------|-----------|----------------|----------|
 | Trend-Pullback | Pullback in uptrend | Momentum reversal | Medium (days-weeks) | ~55-65% |
 | MFI Momentum | Volume-weighted pullback | MFI overbought/EMA exit | Medium (days-weeks) | ~60%+ |
-| Turtle Soup | Breakout | Trailing stop | Long (weeks-months) | ~40-50% |
-| Opening Range | Range breakout | Range breakdown | Short-Medium | ~50-60% |
+| Momentum Breakout | Breakout (10-day high) | Trailing stop (10 EMA)/RSI | Medium (days-weeks) | ~45-55% |
+| Opening Range | Range breakout (3-day) | Range breakdown | Short-Medium | ~50-60% |
 
 ---
 
