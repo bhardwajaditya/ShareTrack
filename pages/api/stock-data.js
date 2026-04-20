@@ -125,7 +125,7 @@ const saveToCache = async (collection, records) => {
   console.log(`Cached ${result.upsertedCount} new records, updated ${result.modifiedCount} existing records`);
 };
 
-// Check if market is still open (before 3:30 PM IST)
+// Check if market is still open (before 3:30 PM IST) buffer 3:45 PM IST for closing price fetch
 const isMarketOpen = () => {
   const now = new Date();
   // Convert to IST (UTC+5:30)
@@ -135,9 +135,9 @@ const isMarketOpen = () => {
   const hours = istTime.getHours();
   const minutes = istTime.getMinutes();
   
-  // Market closes at 3:30 PM IST (15:30)
+  // Market closes at 3:30 PM IST (15:30) buffer 3:45 PM IST for closing price fetch
   const marketCloseHour = 15;
-  const marketCloseMinute = 30;
+  const marketCloseMinute = 45;
   
   if (hours < marketCloseHour) return true;
   if (hours === marketCloseHour && minutes < marketCloseMinute) return true;

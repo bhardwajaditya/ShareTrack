@@ -930,13 +930,14 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
       const prevClose = closes[closes.length - 2];
       const change = ((lastClose - prevClose) / prevClose * 100).toFixed(2);
 
-      // Run all 4 strategies
+      // Run strategies
       const trendPullbackResult = analyzeWeightedStrategy(data);
       const connorsRSIResult = analyzeConnorsRSI(data);
       const momentumBreakoutResult = analyzeMomentumBreakout(data);
       const openingRangeResult = analyzeOpeningRange(data);
+      const sidewaysRangeResult = analyzeRangeReversion(data);
 
-      // Count BUY signals
+      // Count BUY signals - Consensus ONLY from Trend/Momentum strategies
       const signals = [
         trendPullbackResult.signal,
         connorsRSIResult.signal,
@@ -946,7 +947,7 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
       const buyCount = signals.filter(s => s === 'BUY' || s === 'STRONG BUY').length;
       const sellCount = signals.filter(s => s === 'SELL' || s === 'STRONG SELL').length;
 
-      // Overall score
+      // Overall score (Consensus of 4 strategies)
       const overallScore = Math.round(
         (trendPullbackResult.totalScore + 
          connorsRSIResult.score + 
@@ -994,6 +995,17 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
           breakout: openingRangeResult.breakout,
           reason: openingRangeResult.reason
         },
+        // Strategy 5: Sideways Range (Separate)
+        sidewaysRange: {
+          signal: sidewaysRangeResult.signal,
+          score: sidewaysRangeResult.score,
+          isSideways: sidewaysRangeResult.isSideways,
+          reason: sidewaysRangeResult.reason,
+          // Extra details for UI
+          adx: sidewaysRangeResult.adx,
+          nearSupport: sidewaysRangeResult.nearSupport,
+          rsi: sidewaysRangeResult.rsi
+        },
         overallSignal,
         overallScore,
         buyCount
@@ -1004,4 +1016,107 @@ export const fetchIndexAnalysis = async (indexSymbol) => {
     console.error(`Error fetching index analysis for ${indexSymbol}:`, error);
     throw error;
   }
+};
+
+// ============================================================
+// STRATEGY 5: RANGE REVERSION (SIDEWAYS MARKET)
+// Trades the bottom of the range in sideways markets
+// Key indicators: Low ADX (Sideways), Lower BB & RSI (Oversold)
+// ============================================================
+export const analyzeRangeReversion = (data, index = null) => {
+  const insufficientResult = {
+    signal: 'NEUTRAL',
+    score: 0,
+    reason: 'Insufficient data',
+    adx: null,
+    isSideways: false,
+    nearSupport: false,
+    rsi: null
+  };
+
+  const workingData = index !== null ? data.slice(0, index + 1) : data;
+  if (workingData.length < 50) return insufficientResult;
+
+  const closes = workingData.map(d => d.close);
+  const highs = workingData.map(d => d.high);
+  const lows = workingData.map(d => d.low);
+  const lastClose = closes[closes.length - 1];
+
+  // 1. Identify Sideways Market (ADX < 25)
+  const adxResult = adx({ period: 14, high: highs, low: lows, close: closes });
+  const lastADX = adxResult[adxResult.length - 1]?.adx || 0;
+  // Using 25 as threshold for non-trending / sideways
+  const isSideways = lastADX < 25;
+
+  // 2. Identify Bottom of Range (Lower Bollinger Band)
+  const bbResult = bollingerbands({ period: 20, values: closes, stdDev: 2 });
+  const lastBB = bbResult[bbResult.length - 1] || {};
+  // Near Lower Band (within 1% or below)
+  const nearLowerBB = lastClose <= (lastBB.lower * 1.01); 
+
+  // 3. Oversold Condition (RSI < 45) - Relaxed slightly for range trading
+  const rsiValues = rsi({ period: 14, values: closes });
+  const lastRSI = rsiValues[rsiValues.length - 1];
+  const isOversold = lastRSI < 45;
+
+  // 4. Reversal Trigger (Green Candle OR RSI ticking up)
+  const prevRSI = rsiValues[rsiValues.length - 2];
+  const isGreenCandle = lastClose > workingData[workingData.length - 1].open;
+  const rsiTickUp = lastRSI > prevRSI;
+  const reversal = isGreenCandle || rsiTickUp;
+
+  let score = 0;
+  let reasons = [];
+  let signal = 'NEUTRAL';
+
+  if (isSideways) {
+    score += 20;
+    reasons.push(`ADX ${lastADX.toFixed(0)} (sideways/weak trend)`);
+  }
+
+  if (nearLowerBB) {
+    score += 30;
+    reasons.push('At Lower BB Support');
+  }
+
+  if (isOversold) {
+    score += 20;
+    reasons.push(`RSI ${lastRSI.toFixed(0)} (oversold)`);
+  }
+
+  if (reversal && (nearLowerBB || isOversold)) {
+    score += 30;
+    reasons.push('Reversal trigger');
+  }
+
+  // Signal Generation
+  // Strong signal: Sideways + Support + Reversal
+  if (isSideways && nearLowerBB && reversal) {
+    if (score >= 80) signal = 'STRONG BUY';
+    else if (score >= 60) signal = 'BUY';
+  } 
+  // Backup signal: Just Mean Reversion (even if trend is ambiguous)
+  else if (nearLowerBB && isOversold && reversal) {
+    signal = 'BUY';
+    score = Math.max(score, 60);
+    reasons.push('(Mean Reversion)');
+  }
+
+  // Exit/Sell Condition: Upper BB or RSI Overbought
+  const nearUpperBB = lastBB.upper && lastClose >= (lastBB.upper * 0.99);
+  if (nearUpperBB || lastRSI > 70) {
+    signal = 'SELL';
+    reasons = ['Near Upper Range / Overbought'];
+    score = 20; // Low score for BUY means SELL potentially
+  }
+
+  return {
+    signal,
+    score,
+    reason: reasons.join(', ') || 'No setup',
+    adx: lastADX?.toFixed(1),
+    isSideways,
+    nearSupport: nearLowerBB,
+    rsi: lastRSI?.toFixed(1)
+  };
 }; 

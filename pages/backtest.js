@@ -61,7 +61,10 @@ export default function BacktestPage() {
         'Trend-Pullback': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
         'MFI Momentum': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
         'Momentum Breakout': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
-        'Opening Range': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 }
+        'Opening Range': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Combined Consensus': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Sideways Range': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 },
+        'Trend + Momentum': { totalPnL: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0, falsePositives: 0, falseNegatives: 0, stocks: 0 }
       };
 
       let benchmarkTotal = 0;
@@ -124,6 +127,21 @@ export default function BacktestPage() {
               pnl: stockBacktest.strategies[3]?.totalPnL || 0, 
               trades: stockBacktest.strategies[3]?.totalTrades || 0, 
               winRate: stockBacktest.strategies[3]?.winRate || 0 
+            },
+            combinedConsensus: { 
+              pnl: stockBacktest.strategies[4]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[4]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[4]?.winRate || 0 
+            },
+            sidewaysRange: { 
+              pnl: stockBacktest.strategies[5]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[5]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[5]?.winRate || 0 
+            },
+            trendMomentum: { 
+              pnl: stockBacktest.strategies[6]?.totalPnL || 0, 
+              trades: stockBacktest.strategies[6]?.totalTrades || 0, 
+              winRate: stockBacktest.strategies[6]?.winRate || 0 
             },
             benchmarkReturn: stockBacktest.benchmark.percentageReturn,
             buyHoldProfit: stockBacktest.benchmark.totalPnL || (100000 * stockBacktest.benchmark.percentageReturn / 100)
@@ -255,11 +273,32 @@ export default function BacktestPage() {
         { field: 'momentumBreakout.trades', headerName: 'Trd', width: 50 }
       ]
     },
+      { 
+        headerName: '4️⃣ Opening Range', 
+        children: [
+          { field: 'openingRange.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+          { field: 'openingRange.trades', headerName: 'Trd', width: 50 }
+        ]
+      },
+      { 
+        headerName: '✅ Combined Consensus', 
+        children: [
+          { field: 'combinedConsensus.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+          { field: 'combinedConsensus.trades', headerName: 'Trd', width: 50 }
+        ]
+      },
+      { 
+        headerName: '5️⃣ Sideways Range', 
+        children: [
+          { field: 'sidewaysRange.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+          { field: 'sidewaysRange.trades', headerName: 'Trd', width: 50 }
+        ]
+      },
     { 
-      headerName: '4️⃣ Opening Range', 
+      headerName: '📈 Trend + Momentum', 
       children: [
-        { field: 'openingRange.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
-        { field: 'openingRange.trades', headerName: 'Trd', width: 50 }
+        { field: 'trendMomentum.pnl', headerName: 'P&L', width: 90, valueFormatter: p => `₹${(p.value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}`, cellStyle: p => p.value > 0 ? { color: '#16a34a' } : { color: '#dc2626' } },
+        { field: 'trendMomentum.trades', headerName: 'Trd', width: 50 }
       ]
     }
   ], []);
@@ -270,7 +309,7 @@ export default function BacktestPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            📊 4-Strategy Backtester
+            📊 5-Strategy Backtester
           </h1>
           <p className="mt-2 text-gray-400">
             Backtest 4 Strategies on {selectedIndex === 'ALL' ? 'all available indexes' : NSE_INDEXES[selectedIndex]?.name || selectedIndex} with 1 year historical data
@@ -486,6 +525,17 @@ export default function BacktestPage() {
                 <li>• Above VWAP</li>
                 <li>• Volume spike &gt;1.3x</li>
                 <li>• Target: 2x range</li>
+              </ul>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            <div className="bg-gradient-to-br from-purple-900/50 to-purple-800/30 border border-purple-500/50 rounded-xl p-5">
+              <h3 className="text-base font-bold text-purple-400 mb-2">5️⃣ Sideways Range</h3>
+              <ul className="text-gray-400 text-xs space-y-1">
+                <li>• ADX &lt; 25 (Sideways)</li>
+                <li>• Buy Lower BB Support</li>
+                <li>• RSI &lt; 45 (Oversold)</li>
+                <li>• Reversal Trigger</li>
               </ul>
             </div>
           </div>

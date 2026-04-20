@@ -13,6 +13,7 @@ import 'ag-grid-community/styles/ag-theme-alpine.css';
 
 export default function Analysis() {
   const [selectedIndex, setSelectedIndex] = useState(null);
+  const [analysisMode, setAnalysisMode] = useState('normal'); // 'normal' | 'sideways'
   const [stockData, setStockData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -56,119 +57,209 @@ export default function Analysis() {
     return { backgroundColor: 'rgba(100, 116, 139, 0.2)', color: '#94a3b8', textAlign: 'center' };
   };
 
-  // Detail Grid: Stocks & 4 Strategy Analysis
-  const stockColumnDefs = useMemo(() => [
-    { 
-      field: 'symbol', 
-      headerName: 'Symbol', 
-      sortable: true, 
-      filter: true, 
-      pinned: 'left',
-      width: 90
-    },
-    { 
-      field: 'lastPrice', 
-      headerName: 'Price', 
-      sortable: true, 
-      width: 85,
-      valueFormatter: params => params.value ? `₹${params.value.toFixed(2)}` : ''
-    },
-    { 
-      field: 'change', 
-      headerName: 'Chg%', 
-      sortable: true, 
-      width: 70,
-      cellStyle: params => {
-        if (params.value > 0) return { color: '#16a34a', fontWeight: '500' };
-        if (params.value < 0) return { color: '#dc2626', fontWeight: '500' };
-        return null;
+  // Detail Grid: Stocks & Analysis
+  const stockColumnDefs = useMemo(() => {
+    const commonCols = [
+      { 
+        field: 'symbol', 
+        headerName: 'Symbol', 
+        sortable: true, 
+        filter: true, 
+        pinned: 'left',
+        width: 90
       },
-      valueFormatter: params => params.value ? `${params.value > 0 ? '+' : ''}${params.value}%` : ''
-    },
-    // Overall Signal (Consensus)
-    { 
-      field: 'overallSignal', 
-      headerName: '📊 Overall', 
-      sortable: true, 
-      filter: true,
-      width: 100,
-      cellStyle: signalCellStyle
-    },
-    { 
-      field: 'overallScore', 
-      headerName: 'Score', 
-      sortable: true, 
-      width: 65,
-      cellStyle: params => {
-        const score = params.value || 0;
-        if (score >= 60) return { color: '#22c55e', fontWeight: 'bold' };
-        if (score >= 40) return { color: '#fbbf24' };
-        return { color: '#f87171' };
+      { 
+        field: 'lastPrice', 
+        headerName: 'Price', 
+        sortable: true, 
+        width: 85,
+        valueFormatter: params => params.value ? `₹${params.value.toFixed(2)}` : ''
+      },
+      { 
+        field: 'change', 
+        headerName: 'Chg%', 
+        sortable: true, 
+        width: 70,
+        cellStyle: params => {
+          if (params.value > 0) return { color: '#16a34a', fontWeight: '500' };
+          if (params.value < 0) return { color: '#dc2626', fontWeight: '500' };
+          return null;
+        },
+        valueFormatter: params => params.value ? `${params.value > 0 ? '+' : ''}${params.value}%` : ''
       }
-    },
-    { 
-      field: 'buyCount', 
-      headerName: 'Buys', 
-      sortable: true, 
-      width: 55,
-      cellStyle: params => params.value >= 3 ? { color: '#22c55e', fontWeight: 'bold' } : 
-                           params.value >= 2 ? { color: '#4ade80' } : { color: '#94a3b8' }
-    },
-    // Strategy 1: Trend-Pullback
-    { 
-      headerName: '1️⃣ Trend-Pullback',
-      children: [
-        { field: 'trendPullback.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
-        { field: 'trendPullback.score', headerName: 'Pts', width: 50 }
-      ]
-    },
-    // Strategy 2: MFI Momentum Trend
-    {
-      headerName: '2️⃣ MFI Momentum',
-      children: [
-        { field: 'connorsRSI.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
-        { field: 'connorsRSI.score', headerName: 'Pts', width: 50 },
-        { field: 'connorsRSI.mfi', headerName: 'MFI', width: 50 }
-      ]
-    },
-    // Strategy 3: Momentum Breakout
-    { 
-      headerName: '3️⃣ Momentum Breakout',
-      children: [
-        { field: 'momentumBreakout.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
-        { field: 'momentumBreakout.score', headerName: 'Pts', width: 50 },
+    ];
+
+    if (analysisMode === 'sideways') {
+      return [
+        ...commonCols,
         { 
-          field: 'momentumBreakout.breakout', 
-          headerName: 'Brk', 
-          width: 45,
-          valueFormatter: p => p.value ? '🚀' : '-',
-          cellStyle: params => ({ textAlign: 'center' })
-        }
-      ]
-    },
-    // Strategy 4: Opening Range
-    { 
-      headerName: '4️⃣ Opening Range',
-      children: [
-        { field: 'openingRange.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
-        { field: 'openingRange.score', headerName: 'Pts', width: 50 },
+          field: 'sidewaysRange.signal', 
+          headerName: 'Signal', 
+          sortable: true, 
+          filter: true,
+          width: 100,
+          cellStyle: signalCellStyle
+        },
         { 
-          field: 'openingRange.breakout', 
-          headerName: 'Brk', 
-          width: 45,
-          valueFormatter: p => p.value ? '📈' : '-',
-          cellStyle: params => ({ textAlign: 'center' })
+          field: 'sidewaysRange.score', 
+          headerName: 'Score', 
+          sortable: true, 
+          width: 70,
+          cellStyle: params => {
+            const score = params.value || 0;
+            if (score >= 60) return { color: '#22c55e', fontWeight: 'bold' };
+            if (score >= 40) return { color: '#fbbf24' };
+            return { color: '#f87171' };
+          }
+        },
+        {
+          field: 'sidewaysRange.adx',
+          headerName: 'ADX',
+          width: 70,
+          valueFormatter: p => p.value || '-',
+          cellStyle: p => p.value < 25 ? { color: '#22c55e' } : { color: '#94a3b8' }
+        },
+        {
+          field: 'sidewaysRange.rsi',
+          headerName: 'RSI',
+          width: 70,
+          cellStyle: p => p.value < 45 ? { color: '#22c55e' } : null
+        },
+        {
+          field: 'sidewaysRange.nearSupport',
+          headerName: 'Support?',
+          width: 90,
+          valueFormatter: p => p.value ? '✅' : '-',
+          cellStyle: { textAlign: 'center' }
+        },
+        {
+          field: 'sidewaysRange.reason',
+          headerName: 'Trigger Reason',
+          flex: 1,
+          wrapText: true,
+          autoHeight: true
         }
-      ]
+      ];
     }
-  ], []);
+
+    // Normal Mode Strategy Columns
+    return [
+      ...commonCols,
+      // Overall Signal (Consensus)
+      { 
+        field: 'overallSignal', 
+        headerName: '📊 Overall', 
+        sortable: true, 
+        filter: true,
+        width: 100,
+        cellStyle: signalCellStyle
+      },
+      { 
+        field: 'overallScore', 
+        headerName: 'Score', 
+        sortable: true, 
+        width: 65,
+        cellStyle: params => {
+          const score = params.value || 0;
+          if (score >= 60) return { color: '#22c55e', fontWeight: 'bold' };
+          if (score >= 40) return { color: '#fbbf24' };
+          return { color: '#f87171' };
+        }
+      },
+      { 
+        field: 'buyCount', 
+        headerName: 'Buys', 
+        sortable: true, 
+        width: 55,
+        cellStyle: params => params.value >= 3 ? { color: '#22c55e', fontWeight: 'bold' } : 
+                              params.value >= 2 ? { color: '#4ade80' } : { color: '#94a3b8' }
+      },
+      // Strategy 1: Trend-Pullback
+      { 
+        headerName: '1️⃣ Trend-Pullback',
+        children: [
+          { field: 'trendPullback.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+          { field: 'trendPullback.score', headerName: 'Pts', width: 50 }
+        ]
+      },
+      // Strategy 2: MFI Momentum Trend
+      {
+        headerName: '2️⃣ MFI Momentum',
+        children: [
+          { field: 'connorsRSI.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+          { field: 'connorsRSI.score', headerName: 'Pts', width: 50 },
+          { field: 'connorsRSI.mfi', headerName: 'MFI', width: 50 }
+        ]
+      },
+      // Strategy 3: Momentum Breakout
+      { 
+        headerName: '3️⃣ Momentum Breakout',
+        children: [
+          { field: 'momentumBreakout.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+          { field: 'momentumBreakout.score', headerName: 'Pts', width: 50 },
+          { 
+            field: 'momentumBreakout.breakout', 
+            headerName: 'Brk', 
+            width: 45,
+            valueFormatter: p => p.value ? '🚀' : '-',
+            cellStyle: params => ({ textAlign: 'center' })
+          }
+        ]
+      },
+      // Strategy 4: Opening Range
+      { 
+        headerName: '4️⃣ Opening Range',
+        children: [
+          { field: 'openingRange.signal', headerName: 'Sig', width: 80, cellStyle: signalCellStyle },
+          { field: 'openingRange.score', headerName: 'Pts', width: 50 },
+          { 
+            field: 'openingRange.breakout', 
+            headerName: 'Brk', 
+            width: 45,
+            valueFormatter: p => p.value ? '📈' : '-',
+            cellStyle: params => ({ textAlign: 'center' })
+          }
+        ]
+      }
+    ];
+  }, [analysisMode]);
 
   return (
     <div className="animate-fade-in">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">📊 Market Analysis</h1>
-        <p className="mt-2 text-[var(--neutral-400)]">Select an index to view technical analysis and signals</p>
+      <div className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-white">📊 Market Analysis</h1>
+          <p className="mt-2 text-[var(--neutral-400)]">
+            {analysisMode === 'normal' 
+              ? 'Select an index to view technical analysis and signals' 
+              : 'Identify Sideways Markets & Reversal Setups'}
+          </p>
+        </div>
+        
+        {/* Mode Toggle */}
+        <div className="flex bg-[var(--neutral-800)] p-1 rounded-lg border border-[var(--neutral-700)]">
+          <button
+            onClick={() => setAnalysisMode('normal')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              analysisMode === 'normal' 
+                ? 'bg-[var(--primary-600)] text-white shadow-lg' 
+                : 'text-[var(--neutral-400)] hover:text-white'
+            }`}
+          >
+            🚀 Trend Strategies
+          </button>
+          <button
+            onClick={() => setAnalysisMode('sideways')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              analysisMode === 'sideways' 
+                ? 'bg-[var(--primary-600)] text-white shadow-lg' 
+                : 'text-[var(--neutral-400)] hover:text-white'
+            }`}
+          >
+            🦀 Sideways / Reversal
+          </button>
+        </div>
       </div>
 
       {/* Master Grid: Indexes */}

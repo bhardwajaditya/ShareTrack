@@ -7,7 +7,8 @@ import {
   analyzeWeightedStrategy,
   analyzeConnorsRSI,
   analyzeMomentumBreakout,
-  analyzeOpeningRange
+  analyzeOpeningRange,
+  analyzeRangeReversion
 } from './stockData';
 
 // ============================================================
@@ -64,6 +65,9 @@ export const backtestStrategy = (strategyName, runStrategy, historicalData, init
     });
 
     // Trading logic
+    const TAKE_PROFIT_PCT = 0.15; // 15% take profit
+    const STOP_LOSS_PCT   = 0.05; // 5% stop loss
+
     if ((signal.signal === 'BUY' || signal.signal === 'STRONG BUY') && !position) {
       const shares = Math.floor(capital / today.close);
       if (shares > 0) {
@@ -75,40 +79,59 @@ export const backtestStrategy = (strategyName, runStrategy, historicalData, init
         };
         capital -= shares * today.close;
       }
-    } else if ((signal.signal === 'SELL' || signal.signal === 'STRONG SELL') && position) {
-      const exitValue = position.shares * today.close;
-      const pnl = exitValue - (position.shares * position.entryPrice);
-      const pnlPercent = ((today.close - position.entryPrice) / position.entryPrice) * 100;
+    } else if (position) {
+      const dayHigh  = today.high  || today.close;
+      const dayLow   = today.low   || today.close;
+      const tpPrice  = position.entryPrice * (1 + TAKE_PROFIT_PCT);
+      const slPrice  = position.entryPrice * (1 - STOP_LOSS_PCT);
 
-      results.trades.push({
-        entryDate: position.entryDate,
-        exitDate: today.date,
-        entryPrice: position.entryPrice,
-        exitPrice: today.close,
-        shares: position.shares,
-        pnl: pnl,
-        pnlPercent: pnlPercent,
-        isWin: pnl > 0,
-        entryScore: position.entryScore,
-        exitScore: signal.score
-      });
+      let exitPrice  = null;
+      let exitReason = null;
 
-      if (pnl > 0) {
-        results.winningTrades++;
-      } else {
-        results.losingTrades++;
-        results.falsePositives++;
+      // Stop-loss checked first (worst-case intraday)
+      if (dayLow <= slPrice) {
+        exitPrice  = slPrice;
+        exitReason = 'stop-loss';
+      } else if (dayHigh >= tpPrice) {
+        exitPrice  = tpPrice;
+        exitReason = 'take-profit';
+      } else if (signal.signal === 'SELL' || signal.signal === 'STRONG SELL') {
+        exitPrice  = today.close;
+        exitReason = 'signal';
       }
 
-      capital += exitValue;
-      position = null;
+      if (exitPrice !== null) {
+        const exitValue = position.shares * exitPrice;
+        const pnl = exitValue - (position.shares * position.entryPrice);
+        const pnlPercent = ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
 
-      if (capital > peakCapital) {
-        peakCapital = capital;
-      }
-      const drawdown = ((peakCapital - capital) / peakCapital) * 100;
-      if (drawdown > maxDrawdown) {
-        maxDrawdown = drawdown;
+        results.trades.push({
+          entryDate:  position.entryDate,
+          exitDate:   today.date,
+          entryPrice: position.entryPrice,
+          exitPrice,
+          shares:     position.shares,
+          pnl,
+          pnlPercent,
+          isWin:      pnl > 0,
+          entryScore: position.entryScore,
+          exitScore:  signal.score,
+          exitReason
+        });
+
+        if (pnl > 0) {
+          results.winningTrades++;
+        } else {
+          results.losingTrades++;
+          results.falsePositives++;
+        }
+
+        capital += exitValue;
+        position = null;
+
+        if (capital > peakCapital) peakCapital = capital;
+        const drawdown = ((peakCapital - capital) / peakCapital) * 100;
+        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
       }
     }
   }
@@ -118,17 +141,18 @@ export const backtestStrategy = (strategyName, runStrategy, historicalData, init
     const lastPrice = historicalData[historicalData.length - 1].close;
     const exitValue = position.shares * lastPrice;
     const pnl = exitValue - (position.shares * position.entryPrice);
-    
+
     results.trades.push({
-      entryDate: position.entryDate,
-      exitDate: historicalData[historicalData.length - 1].date,
+      entryDate:  position.entryDate,
+      exitDate:   historicalData[historicalData.length - 1].date,
       entryPrice: position.entryPrice,
-      exitPrice: lastPrice,
-      shares: position.shares,
-      pnl: pnl,
+      exitPrice:  lastPrice,
+      shares:     position.shares,
+      pnl,
       pnlPercent: ((lastPrice - position.entryPrice) / position.entryPrice) * 100,
-      isWin: pnl > 0,
-      isOpen: true
+      isWin:      pnl > 0,
+      exitReason: 'end-of-data',
+      isOpen:     true
     });
 
     if (pnl > 0) results.winningTrades++;
@@ -166,12 +190,83 @@ export const backtestStrategy = (strategyName, runStrategy, historicalData, init
 // RUN ALL 4 STRATEGIES
 // Uses strategy functions from stockData.js (single source of truth)
 // ============================================================
+const analyzeCombinedStrategy = (data, index) => {
+  const trendPullback = analyzeWeightedStrategy(data, index);
+  const connorsRSI = analyzeConnorsRSI(data, index);
+  const momentumBreakout = analyzeMomentumBreakout(data, index);
+  const openingRange = analyzeOpeningRange(data, index);
+
+  const signals = [
+    trendPullback.signal,
+    connorsRSI.signal,
+    momentumBreakout.signal,
+    openingRange.signal
+  ];
+
+  const buyCount = signals.filter(s => s === 'BUY' || s === 'STRONG BUY').length;
+  const sellCount = signals.filter(s => s === 'SELL' || s === 'STRONG SELL').length;
+
+  let signal = 'NEUTRAL';
+  if (buyCount >= 3) signal = 'STRONG BUY';
+  else if (buyCount >= 2) signal = 'BUY';
+  else if (sellCount >= 3) signal = 'STRONG SELL';
+  else if (sellCount >= 2) signal = 'SELL';
+
+  // Calculate average score
+  const totalScore = Math.round(
+    ((trendPullback.totalScore || 0) + 
+     (connorsRSI.score || 0) + 
+     (momentumBreakout.score || 0) + 
+     (openingRange.score || 0)) / 4
+  );
+
+  return {
+    signal,
+    score: totalScore,
+    reason: `Buys: ${buyCount}, Sells: ${sellCount}`
+  };
+};
+
+const analyzeTrendMomentumStrategy = (data, index) => {
+  const trendPullback = analyzeWeightedStrategy(data, index);
+  const momentumBreakout = analyzeMomentumBreakout(data, index);
+
+  // Average the scores
+  const score = Math.round(((trendPullback.totalScore || 0) + (momentumBreakout.score || 0)) / 2);
+
+  let signal = 'NEUTRAL';
+  let confidence = 'LOW';
+  
+  if (score >= 80) {
+    signal = 'STRONG BUY';
+    confidence = 'HIGH';
+  } else if (score >= 60) {
+    signal = 'BUY';
+    confidence = 'MEDIUM';
+  } else if (score <= 20) {
+    signal = 'STRONG SELL'; 
+    confidence = 'HIGH';
+  } else if (score <= 40) {
+    signal = 'SELL';
+    confidence = 'MEDIUM';
+  }
+
+  return {
+    signal,
+    score,
+    reason: `Avg Score: ${score} (Trend: ${trendPullback.totalScore || 0}, Mom: ${momentumBreakout.score || 0})`
+  };
+};
+
 export const runAllBacktests = (historicalData, initialCapital = 100000) => {
   const strategies = [
     { name: 'Trend-Pullback', fn: analyzeWeightedStrategy },
     { name: 'MFI Momentum', fn: analyzeConnorsRSI },
     { name: 'Momentum Breakout', fn: analyzeMomentumBreakout },
-    { name: 'Opening Range', fn: analyzeOpeningRange }
+    { name: 'Opening Range', fn: analyzeOpeningRange },
+    { name: 'Combined Consensus', fn: analyzeCombinedStrategy },
+    { name: 'Sideways Range', fn: analyzeRangeReversion },
+    { name: 'Trend + Momentum', fn: analyzeTrendMomentumStrategy }
   ];
 
   const results = strategies.map(strategy => 
